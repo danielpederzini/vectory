@@ -1,4 +1,4 @@
-package org.vectory.content_manager;
+package org.vectory.contentmanager;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
