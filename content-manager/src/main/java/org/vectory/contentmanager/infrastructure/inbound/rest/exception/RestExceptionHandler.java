@@ -6,7 +6,6 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.vectory.contentmanager.domain.exception.HttpStatusException;
-import org.vectory.contentmanager.domain.exception.PostNotFoundException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -15,7 +14,7 @@ import java.util.Map;
 public class RestExceptionHandler {
 
     @ExceptionHandler(HttpStatusException.class)
-    public ProblemDetail handlePostNotFound(PostNotFoundException exception) {
+    public ProblemDetail handleHttpStatusException(HttpStatusException exception) {
         return ProblemDetail.forStatusAndDetail(exception.getHttpStatus(), exception.getMessage());
     }
 
