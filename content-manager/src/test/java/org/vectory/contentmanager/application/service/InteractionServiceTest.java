@@ -12,11 +12,15 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.vectory.contentmanager.application.event.InteractionCreatedEvent;
+import org.vectory.contentmanager.domain.enums.AggregateType;
 import org.vectory.contentmanager.domain.enums.InteractionType;
 import org.vectory.contentmanager.domain.exception.DuplicateInteractionException;
 import org.vectory.contentmanager.domain.exception.PostNotFoundException;
 import org.vectory.contentmanager.infrastructure.inbound.rest.dto.InteractionCreationRequestDto;
 import org.vectory.contentmanager.infrastructure.inbound.rest.dto.InteractionResponseDto;
+import org.vectory.contentmanager.infrastructure.outbound.messaging.OutboxEventWriter;
+import org.vectory.contentmanager.infrastructure.outbound.messaging.OutboxTopics;
 import org.vectory.contentmanager.infrastructure.outbound.persistence.entity.InteractionEntity;
 import org.vectory.contentmanager.infrastructure.outbound.persistence.entity.PostEntity;
 import org.vectory.contentmanager.infrastructure.outbound.persistence.repository.InteractionRepository;
@@ -28,6 +32,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -50,11 +55,17 @@ class InteractionServiceTest {
     @Mock
     private PostRepository postRepository;
 
+    @Mock
+    private OutboxEventWriter outboxEventWriter;
+
     @InjectMocks
     private InteractionService interactionService;
 
     @Captor
     private ArgumentCaptor<InteractionEntity> interactionEntityCaptor;
+
+    @Captor
+    private ArgumentCaptor<InteractionCreatedEvent> interactionCreatedEventCaptor;
 
     private static InteractionCreationRequestDto buildRequest(InteractionType type) {
         return new InteractionCreationRequestDto(POST_ID, USER_ID, type);
@@ -162,5 +173,37 @@ class InteractionServiceTest {
                 .isThrownBy(() -> interactionService.create(requestDto))
                 .withCause(cause)
                 .satisfies(exception -> assertThat(exception.getHttpStatus()).isEqualTo(HttpStatus.CONFLICT));
+
+        verifyNoInteractions(outboxEventWriter);
+    }
+
+    @Test
+    @DisplayName("writes an interactions.created outbox event keyed by the persisted interaction id")
+    void shouldWriteInteractionCreatedOutboxEvent() {
+        InteractionEntity persisted = InteractionEntity.builder()
+                .id(PERSISTED_INTERACTION_ID)
+                .post(buildPostReference())
+                .userId(USER_ID)
+                .type(DEFAULT_TYPE)
+                .creationInstant(PERSISTED_INSTANT)
+                .build();
+        stubExistingPost();
+        when(interactionRepository.saveAndFlush(any(InteractionEntity.class))).thenReturn(persisted);
+
+        interactionService.create(buildRequest(DEFAULT_TYPE));
+
+        verify(outboxEventWriter).append(
+                eq(AggregateType.INTERACTION),
+                eq(PERSISTED_INTERACTION_ID),
+                eq(OutboxTopics.INTERACTIONS_CREATED),
+                eq(PERSISTED_INTERACTION_ID.toString()),
+                interactionCreatedEventCaptor.capture()
+        );
+        InteractionCreatedEvent event = interactionCreatedEventCaptor.getValue();
+        assertThat(event.interactionId()).isEqualTo(PERSISTED_INTERACTION_ID);
+        assertThat(event.postId()).isEqualTo(POST_ID);
+        assertThat(event.userId()).isEqualTo(USER_ID);
+        assertThat(event.type()).isEqualTo(DEFAULT_TYPE);
+        assertThat(event.creationInstant()).isEqualTo(PERSISTED_INSTANT);
     }
 }

@@ -11,10 +11,14 @@ import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.vectory.contentmanager.application.event.PostCreatedEvent;
+import org.vectory.contentmanager.domain.enums.AggregateType;
 import org.vectory.contentmanager.domain.enums.PostMediaType;
 import org.vectory.contentmanager.infrastructure.inbound.rest.dto.PostCreationRequestDto;
 import org.vectory.contentmanager.infrastructure.inbound.rest.dto.PostMediaCreationRequestDto;
 import org.vectory.contentmanager.infrastructure.inbound.rest.dto.PostResponseDto;
+import org.vectory.contentmanager.infrastructure.outbound.messaging.OutboxEventWriter;
+import org.vectory.contentmanager.infrastructure.outbound.messaging.OutboxTopics;
 import org.vectory.contentmanager.infrastructure.outbound.persistence.entity.PostEntity;
 import org.vectory.contentmanager.infrastructure.outbound.persistence.entity.PostMedia;
 import org.vectory.contentmanager.infrastructure.outbound.persistence.repository.PostRepository;
@@ -25,6 +29,7 @@ import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -43,11 +48,17 @@ class PostServiceTest {
     @Mock
     private PostRepository postRepository;
 
+    @Mock
+    private OutboxEventWriter outboxEventWriter;
+
     @InjectMocks
     private PostService postService;
 
     @Captor
     private ArgumentCaptor<PostEntity> postEntityCaptor;
+
+    @Captor
+    private ArgumentCaptor<PostCreatedEvent> postCreatedEventCaptor;
 
     private static PostCreationRequestDto buildRequest(PostMediaCreationRequestDto media) {
         return new PostCreationRequestDto(AUTHOR_ID, SUBMITTED_TEXT, media);
@@ -150,5 +161,27 @@ class PostServiceTest {
 
         assertThat(capturePersistedEntity().getMedia()).isNull();
         assertThat(response.media()).isNull();
+    }
+
+    @Test
+    @DisplayName("writes a posts.created outbox event keyed by the persisted post id")
+    void shouldWritePostCreatedOutboxEvent() {
+        stubSaveToReturnItsArgument();
+
+        PostResponseDto response = postService.create(buildRequest(new PostMediaCreationRequestDto(MEDIA_TYPE, MEDIA_URL)));
+
+        verify(outboxEventWriter).append(
+                eq(AggregateType.POST),
+                eq(response.id()),
+                eq(OutboxTopics.POSTS_CREATED),
+                eq(response.id().toString()),
+                postCreatedEventCaptor.capture()
+        );
+        PostCreatedEvent event = postCreatedEventCaptor.getValue();
+        assertThat(event.postId()).isEqualTo(response.id());
+        assertThat(event.authorId()).isEqualTo(AUTHOR_ID);
+        assertThat(event.text()).isEqualTo(SUBMITTED_TEXT);
+        assertThat(event.media().mediaUrl()).isEqualTo(MEDIA_URL);
+        assertThat(event.creationInstant()).isEqualTo(response.creationInstant());
     }
 }
