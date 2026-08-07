@@ -2,6 +2,7 @@ package org.vectory.contentmanager.application.mapper;
 
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
+import org.vectory.contentmanager.application.event.PostCreatedEvent;
 import org.vectory.contentmanager.infrastructure.inbound.rest.dto.PostCreationRequestDto;
 import org.vectory.contentmanager.infrastructure.inbound.rest.dto.PostMediaCreationRequestDto;
 import org.vectory.contentmanager.infrastructure.inbound.rest.dto.PostMediaResponseDto;
@@ -32,6 +33,16 @@ public final class PostMapper {
                 .text(entity.getText())
                 .creationInstant(entity.getCreationInstant())
                 .media(toMediaResponseDto(entity.getMedia()))
+                .build();
+    }
+
+    public static PostCreatedEvent toCreatedEvent(PostEntity entity) {
+        return PostCreatedEvent.builder()
+                .postId(entity.getId())
+                .authorId(entity.getAuthorId())
+                .text(entity.getText())
+                .media(toMediaResponseDto(entity.getMedia()))
+                .creationInstant(entity.getCreationInstant())
                 .build();
     }
 

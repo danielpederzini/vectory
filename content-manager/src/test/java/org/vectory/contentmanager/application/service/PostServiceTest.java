@@ -1,30 +1,34 @@
 package org.vectory.contentmanager.application.service;
 
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
-import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.vectory.contentmanager.domain.enums.PostMediaType;
+import org.vectory.contentmanager.application.event.PostCreatedEvent;
+import org.vectory.contentmanager.application.mapper.PostMapper;
+import org.vectory.contentmanager.domain.enums.AggregateType;
 import org.vectory.contentmanager.infrastructure.inbound.rest.dto.PostCreationRequestDto;
-import org.vectory.contentmanager.infrastructure.inbound.rest.dto.PostMediaCreationRequestDto;
 import org.vectory.contentmanager.infrastructure.inbound.rest.dto.PostResponseDto;
+import org.vectory.contentmanager.infrastructure.outbound.messaging.OutboxEventWriter;
+import org.vectory.contentmanager.infrastructure.outbound.messaging.OutboxTopics;
 import org.vectory.contentmanager.infrastructure.outbound.persistence.entity.PostEntity;
-import org.vectory.contentmanager.infrastructure.outbound.persistence.entity.PostMedia;
 import org.vectory.contentmanager.infrastructure.outbound.persistence.repository.PostRepository;
 
 import java.time.Instant;
 import java.util.UUID;
-import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -34,121 +38,89 @@ class PostServiceTest {
 
     private static final UUID PERSISTED_POST_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final UUID AUTHOR_ID = UUID.fromString("22222222-2222-2222-2222-222222222222");
-    private static final Instant PERSISTED_INSTANT = Instant.parse("2026-01-15T10:15:30Z");
-    private static final String SUBMITTED_TEXT = "hello world";
-    private static final String PERSISTED_TEXT = "text as stored";
-    private static final String MEDIA_URL = "https://cdn.vectory.org/media/cat.png";
-    private static final PostMediaType MEDIA_TYPE = PostMediaType.IMAGE;
+
+    private static final PostCreationRequestDto REQUEST = new PostCreationRequestDto(AUTHOR_ID, "hello world", null);
+    private static final PostEntity MAPPED_ENTITY = PostEntity.builder().build();
+    private static final PostEntity SAVED_ENTITY = PostEntity.builder().id(PERSISTED_POST_ID).build();
+    private static final PostCreatedEvent CREATED_EVENT = PostCreatedEvent.builder().postId(PERSISTED_POST_ID).build();
+    private static final PostResponseDto RESPONSE = PostResponseDto.builder().id(PERSISTED_POST_ID).build();
 
     @Mock
     private PostRepository postRepository;
 
+    @Mock
+    private OutboxEventWriter outboxEventWriter;
+
     @InjectMocks
     private PostService postService;
 
+    private MockedStatic<PostMapper> postMapper;
+
     @Captor
-    private ArgumentCaptor<PostEntity> postEntityCaptor;
+    private ArgumentCaptor<UUID> idCaptor;
 
-    private static PostCreationRequestDto buildRequest(PostMediaCreationRequestDto media) {
-        return new PostCreationRequestDto(AUTHOR_ID, SUBMITTED_TEXT, media);
+    @Captor
+    private ArgumentCaptor<Instant> instantCaptor;
+
+    @BeforeEach
+    void openMapperMock() {
+        postMapper = mockStatic(PostMapper.class);
+        postMapper.when(() -> PostMapper.toEntity(eq(REQUEST), any(UUID.class), any(Instant.class)))
+                .thenReturn(MAPPED_ENTITY);
+        postMapper.when(() -> PostMapper.toCreatedEvent(SAVED_ENTITY)).thenReturn(CREATED_EVENT);
+        postMapper.when(() -> PostMapper.toResponseDto(SAVED_ENTITY)).thenReturn(RESPONSE);
+        when(postRepository.save(MAPPED_ENTITY)).thenReturn(SAVED_ENTITY);
     }
 
-    private static Stream<PostMediaCreationRequestDto> provideRequestsWithoutUsableMedia() {
-        return Stream.of(
-                null,
-                new PostMediaCreationRequestDto(MEDIA_TYPE, null)
-        );
-    }
-
-    private void stubSaveToReturnItsArgument() {
-        when(postRepository.save(any(PostEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
-    }
-
-    private PostEntity capturePersistedEntity() {
-        verify(postRepository).save(postEntityCaptor.capture());
-        return postEntityCaptor.getValue();
-    }
-
-    @Test
-    @DisplayName("persists a post carrying the submitted author, text and media")
-    void shouldPersistPostBuiltFromRequest() {
-        stubSaveToReturnItsArgument();
-
-        postService.create(buildRequest(new PostMediaCreationRequestDto(MEDIA_TYPE, MEDIA_URL)));
-
-        PostEntity persisted = capturePersistedEntity();
-        assertThat(persisted.getAuthorId()).isEqualTo(AUTHOR_ID);
-        assertThat(persisted.getText()).isEqualTo(SUBMITTED_TEXT);
-        assertThat(persisted.getMedia().getMediaType()).isEqualTo(MEDIA_TYPE);
-        assertThat(persisted.getMedia().getMediaUrl()).isEqualTo(MEDIA_URL);
-    }
-
-    @ParameterizedTest(name = "media type {0}")
-    @EnumSource(PostMediaType.class)
-    @DisplayName("persists a post for every supported media type")
-    void shouldPersistPostForEverySupportedMediaType(PostMediaType mediaType) {
-        stubSaveToReturnItsArgument();
-
-        postService.create(buildRequest(new PostMediaCreationRequestDto(mediaType, MEDIA_URL)));
-
-        assertThat(capturePersistedEntity().getMedia().getMediaType()).isEqualTo(mediaType);
+    @AfterEach
+    void closeMapperMock() {
+        postMapper.close();
     }
 
     @Test
-    @DisplayName("generates an id and a creation instant for the persisted post")
-    void shouldGenerateIdAndCreationInstantForPersistedPost() {
-        stubSaveToReturnItsArgument();
-
+    @DisplayName("maps the request to an entity with a generated id and instant, then persists it")
+    void shouldMapRequestToEntityAndPersistIt() {
         Instant before = Instant.now();
-        postService.create(buildRequest(null));
+        postService.create(REQUEST);
         Instant after = Instant.now();
 
-        PostEntity persisted = capturePersistedEntity();
-        assertThat(persisted.getId()).isNotNull();
-        assertThat(persisted.getCreationInstant()).isBetween(before, after);
+        postMapper.verify(() -> PostMapper.toEntity(eq(REQUEST), idCaptor.capture(), instantCaptor.capture()));
+        assertThat(idCaptor.getValue()).isNotNull();
+        assertThat(instantCaptor.getValue()).isBetween(before, after);
+        verify(postRepository).save(MAPPED_ENTITY);
+    }
+
+    @Test
+    @DisplayName("returns the response produced by the mapper from the persisted entity")
+    void shouldReturnResponseFromMapper() {
+        PostResponseDto response = postService.create(REQUEST);
+
+        assertThat(response).isSameAs(RESPONSE);
+        postMapper.verify(() -> PostMapper.toResponseDto(SAVED_ENTITY));
     }
 
     @Test
     @DisplayName("generates a distinct id for each created post")
     void shouldGenerateDistinctIdForEachCreatedPost() {
-        stubSaveToReturnItsArgument();
+        postService.create(REQUEST);
+        postService.create(REQUEST);
 
-        PostResponseDto first = postService.create(buildRequest(null));
-        PostResponseDto second = postService.create(buildRequest(null));
-
-        assertThat(first.id()).isNotEqualTo(second.id());
+        postMapper.verify(() -> PostMapper.toEntity(eq(REQUEST), idCaptor.capture(), any(Instant.class)), times(2));
+        assertThat(idCaptor.getAllValues()).doesNotHaveDuplicates();
     }
 
     @Test
-    @DisplayName("returns the response built from the persisted post rather than from the request")
-    void shouldReturnResponseBuiltFromPersistedPost() {
-        PostEntity persisted = PostEntity.builder()
-                .id(PERSISTED_POST_ID)
-                .authorId(AUTHOR_ID)
-                .text(PERSISTED_TEXT)
-                .creationInstant(PERSISTED_INSTANT)
-                .media(PostMedia.builder().mediaType(MEDIA_TYPE).mediaUrl(MEDIA_URL).build())
-                .build();
-        when(postRepository.save(any(PostEntity.class))).thenReturn(persisted);
+    @DisplayName("writes a posts.created outbox event mapped from the persisted entity and keyed by its id")
+    void shouldWritePostCreatedOutboxEvent() {
+        postService.create(REQUEST);
 
-        PostResponseDto response = postService.create(buildRequest(null));
-
-        assertThat(response.id()).isEqualTo(PERSISTED_POST_ID);
-        assertThat(response.authorId()).isEqualTo(AUTHOR_ID);
-        assertThat(response.text()).isEqualTo(PERSISTED_TEXT);
-        assertThat(response.creationInstant()).isEqualTo(PERSISTED_INSTANT);
-        assertThat(response.media().mediaUrl()).isEqualTo(MEDIA_URL);
-    }
-
-    @ParameterizedTest(name = "requested media {0}")
-    @MethodSource("provideRequestsWithoutUsableMedia")
-    @DisplayName("persists and returns a post without media when none is usable")
-    void shouldPersistPostWithoutMediaWhenRequestHasNoUsableMedia(PostMediaCreationRequestDto media) {
-        stubSaveToReturnItsArgument();
-
-        PostResponseDto response = postService.create(buildRequest(media));
-
-        assertThat(capturePersistedEntity().getMedia()).isNull();
-        assertThat(response.media()).isNull();
+        postMapper.verify(() -> PostMapper.toCreatedEvent(SAVED_ENTITY));
+        verify(outboxEventWriter).append(
+                eq(AggregateType.POST),
+                eq(PERSISTED_POST_ID),
+                eq(OutboxTopics.POSTS_CREATED),
+                eq(PERSISTED_POST_ID.toString()),
+                eq(CREATED_EVENT)
+        );
     }
 }
