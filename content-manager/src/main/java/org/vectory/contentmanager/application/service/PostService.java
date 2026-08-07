@@ -3,7 +3,6 @@ package org.vectory.contentmanager.application.service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.vectory.contentmanager.application.event.PostCreatedEvent;
 import org.vectory.contentmanager.application.mapper.PostMapper;
 import org.vectory.contentmanager.domain.enums.AggregateType;
 import org.vectory.contentmanager.infrastructure.inbound.rest.dto.PostCreationRequestDto;
@@ -30,17 +29,16 @@ public class PostService {
         UUID postId = UUID.randomUUID();
         Instant currentInstant = Instant.now();
         PostEntity postEntity = PostMapper.toEntity(postCreationRequest, postId, currentInstant);
-        PostResponseDto response = PostMapper.toResponseDto(postRepository.save(postEntity));
+        PostEntity savedPost = postRepository.save(postEntity);
 
-        PostCreatedEvent event = PostCreatedEvent.builder()
-                .postId(response.id())
-                .authorId(response.authorId())
-                .text(response.text())
-                .media(response.media())
-                .creationInstant(response.creationInstant())
-                .build();
-        outboxEventWriter.append(AGGREGATE_TYPE, response.id(), OutboxTopics.POSTS_CREATED, response.id().toString(), event);
+        outboxEventWriter.append(
+                AGGREGATE_TYPE,
+                savedPost.getId(),
+                OutboxTopics.POSTS_CREATED,
+                savedPost.getId().toString(),
+                PostMapper.toCreatedEvent(savedPost)
+        );
 
-        return response;
+        return PostMapper.toResponseDto(savedPost);
     }
 }

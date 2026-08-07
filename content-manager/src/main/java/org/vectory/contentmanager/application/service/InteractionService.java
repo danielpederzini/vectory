@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.vectory.contentmanager.application.event.InteractionCreatedEvent;
 import org.vectory.contentmanager.application.mapper.InteractionMapper;
 import org.vectory.contentmanager.domain.enums.AggregateType;
 import org.vectory.contentmanager.domain.exception.DuplicateInteractionException;
@@ -47,21 +46,17 @@ public class InteractionService {
         );
 
         try {
-            InteractionResponseDto response =
-                    InteractionMapper.toResponseDto(interactionRepository.saveAndFlush(interactionEntity));
+            InteractionEntity savedInteraction = interactionRepository.saveAndFlush(interactionEntity);
 
-            InteractionCreatedEvent event = InteractionCreatedEvent.builder()
-                    .interactionId(response.id())
-                    .postId(response.postId())
-                    .userId(response.userId())
-                    .type(response.type())
-                    .creationInstant(response.creationInstant())
-                    .build();
             outboxEventWriter.append(
-                    AGGREGATE_TYPE, response.id(), OutboxTopics.INTERACTIONS_CREATED, response.id().toString(), event
+                    AGGREGATE_TYPE,
+                    savedInteraction.getId(),
+                    OutboxTopics.INTERACTIONS_CREATED,
+                    savedInteraction.getId().toString(),
+                    InteractionMapper.toCreatedEvent(savedInteraction)
             );
 
-            return response;
+            return InteractionMapper.toResponseDto(savedInteraction);
         } catch (DataIntegrityViolationException exception) {
             throw new DuplicateInteractionException(postId, request.userId(), request.type(), exception);
         }

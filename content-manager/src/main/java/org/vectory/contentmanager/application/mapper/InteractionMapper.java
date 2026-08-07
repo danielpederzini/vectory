@@ -2,6 +2,7 @@ package org.vectory.contentmanager.application.mapper;
 
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
+import org.vectory.contentmanager.application.event.InteractionCreatedEvent;
 import org.vectory.contentmanager.infrastructure.inbound.rest.dto.InteractionCreationRequestDto;
 import org.vectory.contentmanager.infrastructure.inbound.rest.dto.InteractionResponseDto;
 import org.vectory.contentmanager.infrastructure.outbound.persistence.entity.InteractionEntity;
@@ -31,6 +32,16 @@ public final class InteractionMapper {
     public static InteractionResponseDto toResponseDto(InteractionEntity entity) {
         return InteractionResponseDto.builder()
                 .id(entity.getId())
+                .postId(entity.getPost().getId())
+                .userId(entity.getUserId())
+                .type(entity.getType())
+                .creationInstant(entity.getCreationInstant())
+                .build();
+    }
+
+    public static InteractionCreatedEvent toCreatedEvent(InteractionEntity entity) {
+        return InteractionCreatedEvent.builder()
+                .interactionId(entity.getId())
                 .postId(entity.getPost().getId())
                 .userId(entity.getUserId())
                 .type(entity.getType())
