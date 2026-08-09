@@ -1,0 +1,119 @@
+name: vectory
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:17}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - vectory
+
+  kafka:
+    image: ${KAFKA_IMAGE:-apache/kafka:4.0.0}
+    ports:
+      - "${KAFKA_EXTERNAL_PORT:-29092}:29092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    networks:
+      - vectory
+
+  kafka-init:
+    image: ${KAFKA_IMAGE:-apache/kafka:4.0.0}
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        BS=kafka:9092
+        create() {
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server "$$BS" --create --if-not-exists --topic "$$1" --partitions 1 --replication-factor 1
+        }
+        create posts.created
+        create interactions.created
+        create users.created
+        echo "topics created:"
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server "$$BS" --list
+    networks:
+      - vectory
+
+  content-manager:
+    build:
+      context: ./content-manager
+      args:
+        JDK_IMAGE: ${JDK_IMAGE:-eclipse-temurin:25-jdk}
+        JRE_IMAGE: ${JRE_IMAGE:-eclipse-temurin:25-jre}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: content_manager
+      DB_USERNAME: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-admin}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ports:
+      - "${CONTENT_MANAGER_PORT:-8080}:8080"
+    networks:
+      - vectory
+
+  user-manager:
+    build:
+      context: ./user-manager
+      args:
+        JDK_IMAGE: ${JDK_IMAGE:-eclipse-temurin:25-jdk}
+        JRE_IMAGE: ${JRE_IMAGE:-eclipse-temurin:25-jre}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: user_manager
+      DB_USERNAME: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-admin}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_TTL: ${JWT_TTL:-PT1H}
+    ports:
+      - "${USER_MANAGER_PORT:-8081}:8080"
+    networks:
+      - vectory
+
+networks:
+  vectory:
+    driver: bridge
+
+volumes:
+  pgdata:
