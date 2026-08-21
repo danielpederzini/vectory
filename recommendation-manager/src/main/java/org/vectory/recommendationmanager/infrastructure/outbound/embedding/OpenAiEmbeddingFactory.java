@@ -20,11 +20,10 @@ public class OpenAiEmbeddingFactory implements EmbeddingFactory {
     private final EmbeddingProperties embeddingProperties;
     private final RestClient restClient;
 
-    public OpenAiEmbeddingFactory(EmbeddingProperties embeddingProperties,
-                                  RestClient.Builder restClientBuilder) {
+    public OpenAiEmbeddingFactory(EmbeddingProperties embeddingProperties) {
         this.embeddingProperties = embeddingProperties;
 
-        RestClient.Builder builder = restClientBuilder
+        RestClient.Builder builder = RestClient.builder()
                 .baseUrl(embeddingProperties.baseUrl())
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
 
