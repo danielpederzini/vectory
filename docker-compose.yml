@@ -2,7 +2,7 @@ name: vectory
 
 services:
   postgres:
-    image: ${POSTGRES_IMAGE:-postgres:17}
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg17}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
@@ -108,6 +108,34 @@ services:
       JWT_TTL: ${JWT_TTL:-PT1H}
     ports:
       - "${USER_MANAGER_PORT:-8081}:8080"
+    networks:
+      - vectory
+
+  recommendation-manager:
+    build:
+      context: ./recommendation-manager
+      args:
+        JDK_IMAGE: ${JDK_IMAGE:-eclipse-temurin:25-jdk}
+        JRE_IMAGE: ${JRE_IMAGE:-eclipse-temurin:25-jre}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: recommendation_manager
+      DB_USERNAME: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-admin}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://api.openai.com}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
+      USER_EMBEDDING_ALPHA: ${USER_EMBEDDING_ALPHA:-0.2}
+      CRON_FIXED_DELAY: ${CRON_FIXED_DELAY:-PT5M}
+      CRON_BATCH_SIZE: ${CRON_BATCH_SIZE:-500}
     networks:
       - vectory
 
