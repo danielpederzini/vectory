@@ -1,14 +1,14 @@
 CREATE TABLE post_embeddings
 (
     post_id          UUID PRIMARY KEY,
-    embedding        VECTOR(1536) NOT NULL,
+    embedding        VECTOR(768) NOT NULL,
     creation_instant TIMESTAMPTZ  NOT NULL
 );
 
 CREATE TABLE user_embeddings
 (
     user_id         UUID PRIMARY KEY,
-    embedding       VECTOR(1536) NOT NULL,
+    embedding       VECTOR(768) NOT NULL,
     updated_instant TIMESTAMPTZ  NOT NULL
 );
 

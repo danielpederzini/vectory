@@ -15,7 +15,6 @@ import java.util.Map;
 @Component
 public class OpenAiEmbeddingFactory implements EmbeddingFactory {
     private static final String TOKEN_FORMAT = "Bearer %s";
-    private static final String EMBEDDINGS_PATH = "/v1/embeddings";
 
     private final EmbeddingProperties embeddingProperties;
     private final RestClient restClient;
@@ -43,7 +42,7 @@ public class OpenAiEmbeddingFactory implements EmbeddingFactory {
         );
 
         EmbeddingResponse response = restClient.post()
-                .uri(EMBEDDINGS_PATH)
+                .uri(embeddingProperties.path())
                 .body(request)
                 .retrieve()
                 .body(EmbeddingResponse.class);
