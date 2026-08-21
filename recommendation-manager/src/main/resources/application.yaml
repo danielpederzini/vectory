@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: recommendation-manager
+  main:
+    web-application-type: none
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:recommendation_manager}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:admin}
+  flyway:
+    enabled: true
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: recommendation-manager
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+recommendation-manager:
+  embedding:
+    base-url: ${EMBEDDING_BASE_URL:https://api.openai.com}
+    api-key: ${EMBEDDING_API_KEY:}
+    model: ${EMBEDDING_MODEL:text-embedding-3-small}
+    dimensions: ${EMBEDDING_DIMENSIONS:1536}
+  interaction:
+    weights:
+      VIEW: 0.1
+      LIKE: 0.4
+      SAVE: 0.7
+      SHARE: 1.0
+  user-embedding:
+    alpha: ${USER_EMBEDDING_ALPHA:0.2}
+  cron:
+    fixed-delay: ${CRON_FIXED_DELAY:PT5M}
+    batch-size: ${CRON_BATCH_SIZE:500}
