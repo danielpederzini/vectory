@@ -24,6 +24,7 @@ spring:
 recommendation-manager:
   embedding:
     base-url: ${EMBEDDING_BASE_URL:https://api.openai.com}
+    path: ${EMBEDDING_PATH:/v1/embeddings}
     api-key: ${EMBEDDING_API_KEY:}
     model: ${EMBEDDING_MODEL:text-embedding-3-small}
     dimensions: ${EMBEDDING_DIMENSIONS:1536}
