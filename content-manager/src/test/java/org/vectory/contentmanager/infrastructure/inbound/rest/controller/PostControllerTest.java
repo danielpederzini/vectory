@@ -44,7 +44,7 @@ class PostControllerTest {
     private static final Instant CREATION_INSTANT = Instant.parse(CREATION_INSTANT_VALUE);
 
     private static final String POST_TEXT = "hello world";
-    private static final String MEDIA_URL = "https://cdn.vectory.org/media/cat.png";
+    private static final String OBJECT_KEY = "posts/2b0f0c8e-cat.png";
     private static final PostMediaType MEDIA_TYPE = PostMediaType.IMAGE;
     private static final int MAX_TEXT_LENGTH = 5000;
 
@@ -54,10 +54,10 @@ class PostControllerTest {
               "text": "%s",
               "media": {
                 "mediaType": "%s",
-                "mediaUrl": "%s"
+                "objectKey": "%s"
               }
             }
-            """.formatted(AUTHOR_ID_VALUE, POST_TEXT, MEDIA_TYPE, MEDIA_URL);
+            """.formatted(AUTHOR_ID_VALUE, POST_TEXT, MEDIA_TYPE, OBJECT_KEY);
 
     private static final String BODY_WITHOUT_MEDIA = """
             {
@@ -79,7 +79,7 @@ class PostControllerTest {
             }
             """.formatted(AUTHOR_ID_VALUE, "a".repeat(MAX_TEXT_LENGTH + 1));
 
-    private static final String BODY_WITH_MEDIA_MISSING_URL = """
+    private static final String BODY_WITH_MEDIA_MISSING_KEY = """
             {
               "authorId": "%s",
               "media": {
@@ -96,12 +96,12 @@ class PostControllerTest {
     private static final String CREATION_INSTANT_PATH = "$.creationInstant";
     private static final String MEDIA_PATH = "$.media";
     private static final String MEDIA_TYPE_PATH = "$.media.mediaType";
-    private static final String MEDIA_URL_PATH = "$.media.mediaUrl";
+    private static final String MEDIA_OBJECT_KEY_PATH = "$.media.objectKey";
     private static final String ERROR_FIELD_PATH_TEMPLATE = "$.errors['%s']";
 
     private static final String AUTHOR_ID_FIELD = "authorId";
     private static final String TEXT_FIELD = "text";
-    private static final String MEDIA_URL_FIELD = "media.mediaUrl";
+    private static final String MEDIA_OBJECT_KEY_FIELD = "media.objectKey";
 
     @Autowired
     private MockMvc mockMvc;
@@ -113,7 +113,7 @@ class PostControllerTest {
         return Stream.of(
                 Arguments.of(BODY_WITHOUT_AUTHOR_ID, AUTHOR_ID_FIELD),
                 Arguments.of(BODY_WITH_OVERLONG_TEXT, TEXT_FIELD),
-                Arguments.of(BODY_WITH_MEDIA_MISSING_URL, MEDIA_URL_FIELD)
+                Arguments.of(BODY_WITH_MEDIA_MISSING_KEY, MEDIA_OBJECT_KEY_FIELD)
         );
     }
 
@@ -132,7 +132,7 @@ class PostControllerTest {
     void shouldReturnCreatedWithTheCreatedPost() throws Exception {
         PostMediaResponseDto media = PostMediaResponseDto.builder()
                 .mediaType(MEDIA_TYPE)
-                .mediaUrl(MEDIA_URL)
+                .objectKey(OBJECT_KEY)
                 .build();
         when(postService.create(any(PostCreationRequestDto.class))).thenReturn(buildResponse(media));
 
@@ -145,7 +145,7 @@ class PostControllerTest {
                 .andExpect(jsonPath(TEXT_PATH).value(POST_TEXT))
                 .andExpect(jsonPath(CREATION_INSTANT_PATH).value(CREATION_INSTANT_VALUE))
                 .andExpect(jsonPath(MEDIA_TYPE_PATH).value(MEDIA_TYPE.name()))
-                .andExpect(jsonPath(MEDIA_URL_PATH).value(MEDIA_URL));
+                .andExpect(jsonPath(MEDIA_OBJECT_KEY_PATH).value(OBJECT_KEY));
     }
 
     @Test

@@ -3,6 +3,7 @@ package org.vectory.contentmanager.application.mapper;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 import org.vectory.contentmanager.application.event.PostCreatedEvent;
+import org.vectory.contentmanager.application.event.PostMediaEvent;
 import org.vectory.contentmanager.infrastructure.inbound.rest.dto.PostCreationRequestDto;
 import org.vectory.contentmanager.infrastructure.inbound.rest.dto.PostMediaCreationRequestDto;
 import org.vectory.contentmanager.infrastructure.inbound.rest.dto.PostMediaResponseDto;
@@ -41,29 +42,40 @@ public final class PostMapper {
                 .postId(entity.getId())
                 .authorId(entity.getAuthorId())
                 .text(entity.getText())
-                .media(toMediaResponseDto(entity.getMedia()))
+                .media(toMediaEvent(entity.getMedia()))
                 .creationInstant(entity.getCreationInstant())
                 .build();
     }
 
     private static PostMedia toPostMedia(PostMediaCreationRequestDto request) {
-        if (request == null || request.mediaUrl() == null) {
+        if (request == null || request.objectKey() == null) {
             return null;
         }
 
         return PostMedia.builder()
-                .mediaUrl(request.mediaUrl())
+                .objectKey(request.objectKey())
                 .mediaType(request.mediaType())
                 .build();
     }
 
     private static PostMediaResponseDto toMediaResponseDto(PostMedia media) {
-        if (media == null || media.getMediaUrl() == null) {
+        if (media == null || media.getObjectKey() == null) {
             return null;
         }
 
         return PostMediaResponseDto.builder()
-                .mediaUrl(media.getMediaUrl())
+                .objectKey(media.getObjectKey())
+                .mediaType(media.getMediaType())
+                .build();
+    }
+
+    private static PostMediaEvent toMediaEvent(PostMedia media) {
+        if (media == null || media.getObjectKey() == null) {
+            return null;
+        }
+
+        return PostMediaEvent.builder()
+                .objectKey(media.getObjectKey())
                 .mediaType(media.getMediaType())
                 .build();
     }
