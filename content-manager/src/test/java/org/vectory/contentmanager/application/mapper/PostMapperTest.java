@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.vectory.contentmanager.application.event.PostCreatedEvent;
 import org.vectory.contentmanager.domain.enums.PostMediaType;
 import org.vectory.contentmanager.infrastructure.inbound.rest.dto.PostCreationRequestDto;
 import org.vectory.contentmanager.infrastructure.inbound.rest.dto.PostMediaCreationRequestDto;
@@ -25,16 +26,16 @@ class PostMapperTest {
     private static final UUID AUTHOR_ID = UUID.fromString("22222222-2222-2222-2222-222222222222");
     private static final Instant CREATION_INSTANT = Instant.parse("2026-01-15T10:15:30Z");
     private static final String POST_TEXT = "hello world";
-    private static final String MEDIA_URL = "https://cdn.vectory.org/media/cat.png";
+    private static final String OBJECT_KEY = "posts/2b0f0c8e-cat.png";
 
-    private static Stream<PostMediaCreationRequestDto> provideMediaRequestsWithoutUsableUrl() {
+    private static Stream<PostMediaCreationRequestDto> provideMediaRequestsWithoutUsableKey() {
         return Stream.of(
                 null,
                 new PostMediaCreationRequestDto(PostMediaType.IMAGE, null)
         );
     }
 
-    private static Stream<PostMedia> provideEmbeddedMediaWithoutUsableUrl() {
+    private static Stream<PostMedia> provideEmbeddedMediaWithoutUsableKey() {
         return Stream.of(
                 null,
                 PostMedia.builder().build(),
@@ -69,18 +70,18 @@ class PostMapperTest {
     @EnumSource(PostMediaType.class)
     @DisplayName("maps requested media onto the embedded entity media")
     void shouldMapRequestedMediaOntoEntityForEverySupportedType(PostMediaType mediaType) {
-        PostMediaCreationRequestDto media = new PostMediaCreationRequestDto(mediaType, MEDIA_URL);
+        PostMediaCreationRequestDto media = new PostMediaCreationRequestDto(mediaType, OBJECT_KEY);
         PostCreationRequestDto request = new PostCreationRequestDto(AUTHOR_ID, POST_TEXT, media);
 
         PostEntity entity = PostMapper.toEntity(request, POST_ID, CREATION_INSTANT);
 
         assertThat(entity.getMedia()).isNotNull();
         assertThat(entity.getMedia().getMediaType()).isEqualTo(mediaType);
-        assertThat(entity.getMedia().getMediaUrl()).isEqualTo(MEDIA_URL);
+        assertThat(entity.getMedia().getObjectKey()).isEqualTo(OBJECT_KEY);
     }
 
     @ParameterizedTest(name = "requested media {0}")
-    @MethodSource("provideMediaRequestsWithoutUsableUrl")
+    @MethodSource("provideMediaRequestsWithoutUsableKey")
     @DisplayName("leaves the entity media null when the request carries no usable media")
     void shouldLeaveEntityMediaNullWhenRequestHasNoUsableMedia(PostMediaCreationRequestDto media) {
         PostCreationRequestDto request = new PostCreationRequestDto(AUTHOR_ID, POST_TEXT, media);
@@ -103,23 +104,44 @@ class PostMapperTest {
 
     @ParameterizedTest(name = "media type {0}")
     @EnumSource(PostMediaType.class)
-    @DisplayName("maps embedded entity media onto the response media")
+    @DisplayName("maps embedded media type and durable object key onto the response media")
     void shouldMapEmbeddedMediaOntoResponseForEverySupportedType(PostMediaType mediaType) {
-        PostMedia media = PostMedia.builder().mediaType(mediaType).mediaUrl(MEDIA_URL).build();
+        PostMedia media = PostMedia.builder().mediaType(mediaType).objectKey(OBJECT_KEY).build();
 
         PostResponseDto response = PostMapper.toResponseDto(buildEntityWithMedia(media));
 
         assertThat(response.media()).isNotNull();
         assertThat(response.media().mediaType()).isEqualTo(mediaType);
-        assertThat(response.media().mediaUrl()).isEqualTo(MEDIA_URL);
+        assertThat(response.media().objectKey()).isEqualTo(OBJECT_KEY);
     }
 
     @ParameterizedTest(name = "embedded media case {index}")
-    @MethodSource("provideEmbeddedMediaWithoutUsableUrl")
+    @MethodSource("provideEmbeddedMediaWithoutUsableKey")
     @DisplayName("leaves the response media null when the entity carries no usable media")
     void shouldLeaveResponseMediaNullWhenEntityHasNoUsableMedia(PostMedia media) {
         PostResponseDto response = PostMapper.toResponseDto(buildEntityWithMedia(media));
 
         assertThat(response.media()).isNull();
+    }
+
+    @ParameterizedTest(name = "media type {0}")
+    @EnumSource(PostMediaType.class)
+    @DisplayName("maps embedded media type and durable object key onto the created event")
+    void shouldMapEmbeddedMediaOntoCreatedEvent(PostMediaType mediaType) {
+        PostMedia media = PostMedia.builder().mediaType(mediaType).objectKey(OBJECT_KEY).build();
+
+        PostCreatedEvent event = PostMapper.toCreatedEvent(buildEntityWithMedia(media));
+
+        assertThat(event.media()).isNotNull();
+        assertThat(event.media().mediaType()).isEqualTo(mediaType);
+        assertThat(event.media().objectKey()).isEqualTo(OBJECT_KEY);
+    }
+
+    @Test
+    @DisplayName("leaves the created event media null when the entity carries no usable media")
+    void shouldLeaveCreatedEventMediaNullWhenEntityHasNoUsableMedia() {
+        PostCreatedEvent event = PostMapper.toCreatedEvent(buildEntityWithMedia(null));
+
+        assertThat(event.media()).isNull();
     }
 }

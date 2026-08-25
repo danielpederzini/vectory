@@ -1,10 +1,10 @@
-package org.vectory.contentmanager.infrastructure.inbound.rest.dto;
+package org.vectory.contentmanager.application.event;
 
 import lombok.Builder;
 import org.vectory.contentmanager.domain.enums.PostMediaType;
 
 @Builder
-public record PostMediaResponseDto(
+public record PostMediaEvent(
         PostMediaType mediaType,
         String objectKey
 ) {

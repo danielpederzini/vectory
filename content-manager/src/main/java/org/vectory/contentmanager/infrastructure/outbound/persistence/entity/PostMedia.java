@@ -21,6 +21,6 @@ public class PostMedia {
     @Column(name = "media_type")
     private PostMediaType mediaType;
 
-    @Column(name = "media_url")
-    private String mediaUrl;
+    @Column(name = "media_object_key")
+    private String objectKey;
 }
