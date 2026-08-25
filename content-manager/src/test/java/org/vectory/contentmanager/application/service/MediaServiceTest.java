@@ -12,7 +12,9 @@ import org.vectory.contentmanager.application.port.MediaStoragePort;
 import org.vectory.contentmanager.application.port.PresignedUpload;
 import org.vectory.contentmanager.domain.enums.PostMediaType;
 import org.vectory.contentmanager.domain.exception.InvalidMediaException;
+import org.vectory.contentmanager.infrastructure.config.StoragePresignProperties;
 import org.vectory.contentmanager.infrastructure.config.StorageProperties;
+import org.vectory.contentmanager.infrastructure.config.StorageUploadProperties;
 import org.vectory.contentmanager.infrastructure.inbound.rest.dto.MediaUploadRequestDto;
 import org.vectory.contentmanager.infrastructure.inbound.rest.dto.MediaUploadResponseDto;
 
@@ -33,9 +35,39 @@ import static org.mockito.Mockito.when;
 @DisplayName("MediaService")
 class MediaServiceTest {
 
+    private static final String CONTENT_TYPE_JPEG = "image/jpeg";
+    private static final String CONTENT_TYPE_PNG = "image/png";
+    private static final String CONTENT_TYPE_QUICKTIME = "video/quicktime";
+    private static final String CONTENT_TYPE_QUICKTIME_MIXED_CASE = "VIDEO/QuickTime";
+    private static final String CONTENT_TYPE_MP4 = "video/mp4";
+    private static final String CONTENT_TYPE_HEADER = "Content-Type";
+
+    private static final List<String> ALLOWED_IMAGE_CONTENT_TYPES =
+            List.of(CONTENT_TYPE_JPEG, CONTENT_TYPE_PNG, "image/webp", "image/gif");
+    private static final List<String> ALLOWED_VIDEO_CONTENT_TYPES =
+            List.of(CONTENT_TYPE_MP4, "video/webm", CONTENT_TYPE_QUICKTIME);
+
+    private static final String OBJECT_KEY_PREFIX = "posts/";
+    private static final String JPG_EXTENSION = ".jpg";
+    private static final String MOV_EXTENSION = ".mov";
+    private static final String EXISTING_OBJECT_KEY = "posts/2b0f0c8e-cat.png";
+
     private static final long MAX_IMAGE_BYTES = 10_485_760L;
     private static final long MAX_VIDEO_BYTES = 104_857_600L;
-    private static final String UPLOAD_URL = "http://localhost:9000/vectory-media/posts/x.jpg?signed=1";
+    private static final long SMALL_IMAGE_SIZE = 2_048L;
+    private static final long SMALL_VIDEO_SIZE = 4_096L;
+    private static final long OVERSIZE_IMAGE = MAX_IMAGE_BYTES + 1;
+
+    private static final String INTERNAL_ENDPOINT = "http://minio:9000";
+    private static final String PUBLIC_ENDPOINT = "http://localhost:9000";
+    private static final String REGION = "us-east-1";
+    private static final String BUCKET = "vectory-media";
+    private static final String ACCESS_KEY = "minioadmin";
+    private static final String SECRET_KEY = "minioadmin";
+    private static final Duration PUT_TTL = Duration.ofMinutes(10);
+    private static final Duration GET_TTL = Duration.ofMinutes(15);
+
+    private static final String PRESIGNED_URL = "http://localhost:9000/vectory-media/posts/x.jpg?signed=1";
     private static final Instant EXPIRES_AT = Instant.parse("2026-01-15T10:15:30Z");
 
     @Mock
@@ -49,19 +81,19 @@ class MediaServiceTest {
     @BeforeEach
     void setUp() {
         StorageProperties properties = new StorageProperties(
-                "http://minio:9000",
-                "http://localhost:9000",
-                "us-east-1",
-                "vectory-media",
-                "minioadmin",
-                "minioadmin",
+                INTERNAL_ENDPOINT,
+                PUBLIC_ENDPOINT,
+                REGION,
+                BUCKET,
+                ACCESS_KEY,
+                SECRET_KEY,
                 true,
-                new StorageProperties.Presign(Duration.ofMinutes(10), Duration.ofMinutes(15)),
-                new StorageProperties.Upload(
+                new StoragePresignProperties(PUT_TTL, GET_TTL),
+                new StorageUploadProperties(
                         MAX_IMAGE_BYTES,
                         MAX_VIDEO_BYTES,
-                        List.of("image/jpeg", "image/png", "image/webp", "image/gif"),
-                        List.of("video/mp4", "video/webm", "video/quicktime"))
+                        ALLOWED_IMAGE_CONTENT_TYPES,
+                        ALLOWED_VIDEO_CONTENT_TYPES)
         );
         mediaService = new MediaService(mediaStoragePort, properties);
     }
@@ -69,39 +101,39 @@ class MediaServiceTest {
     @Test
     @DisplayName("generates a prefixed key with a content-type extension and returns the presigned upload")
     void shouldGenerateKeyAndReturnPresignedUpload() {
-        when(mediaStoragePort.createUploadUrl(anyString(), eq("image/jpeg")))
-                .thenReturn(new PresignedUpload(UPLOAD_URL, EXPIRES_AT));
+        when(mediaStoragePort.createUploadUrl(anyString(), eq(CONTENT_TYPE_JPEG)))
+                .thenReturn(new PresignedUpload(PRESIGNED_URL, EXPIRES_AT));
 
         MediaUploadResponseDto response = mediaService.createUpload(
-                new MediaUploadRequestDto(PostMediaType.IMAGE, "image/jpeg", 2048));
+                new MediaUploadRequestDto(PostMediaType.IMAGE, CONTENT_TYPE_JPEG, SMALL_IMAGE_SIZE));
 
-        verify(mediaStoragePort).createUploadUrl(objectKeyCaptor.capture(), eq("image/jpeg"));
-        assertThat(objectKeyCaptor.getValue()).startsWith("posts/").endsWith(".jpg");
+        verify(mediaStoragePort).createUploadUrl(objectKeyCaptor.capture(), eq(CONTENT_TYPE_JPEG));
+        assertThat(objectKeyCaptor.getValue()).startsWith(OBJECT_KEY_PREFIX).endsWith(JPG_EXTENSION);
         assertThat(response.objectKey()).isEqualTo(objectKeyCaptor.getValue());
-        assertThat(response.uploadUrl()).isEqualTo(UPLOAD_URL);
+        assertThat(response.uploadUrl()).isEqualTo(PRESIGNED_URL);
         assertThat(response.httpMethod()).isEqualTo("PUT");
-        assertThat(response.requiredHeaders()).containsEntry("Content-Type", "image/jpeg");
+        assertThat(response.requiredHeaders()).containsEntry(CONTENT_TYPE_HEADER, CONTENT_TYPE_JPEG);
         assertThat(response.expiresAt()).isEqualTo(EXPIRES_AT);
     }
 
     @Test
     @DisplayName("normalizes the content type to lower case and maps known extensions")
     void shouldNormalizeContentTypeAndMapExtension() {
-        when(mediaStoragePort.createUploadUrl(anyString(), eq("video/quicktime")))
-                .thenReturn(new PresignedUpload(UPLOAD_URL, EXPIRES_AT));
+        when(mediaStoragePort.createUploadUrl(anyString(), eq(CONTENT_TYPE_QUICKTIME)))
+                .thenReturn(new PresignedUpload(PRESIGNED_URL, EXPIRES_AT));
 
         MediaUploadResponseDto response = mediaService.createUpload(
-                new MediaUploadRequestDto(PostMediaType.VIDEO, "VIDEO/QuickTime", 4096));
+                new MediaUploadRequestDto(PostMediaType.VIDEO, CONTENT_TYPE_QUICKTIME_MIXED_CASE, SMALL_VIDEO_SIZE));
 
-        assertThat(response.objectKey()).endsWith(".mov");
-        assertThat(response.requiredHeaders()).containsEntry("Content-Type", "video/quicktime");
+        assertThat(response.objectKey()).endsWith(MOV_EXTENSION);
+        assertThat(response.requiredHeaders()).containsEntry(CONTENT_TYPE_HEADER, CONTENT_TYPE_QUICKTIME);
     }
 
     @Test
     @DisplayName("rejects a content type that is not allowed for the media type")
     void shouldRejectDisallowedContentType() {
         assertThatThrownBy(() -> mediaService.createUpload(
-                new MediaUploadRequestDto(PostMediaType.IMAGE, "video/mp4", 2048)))
+                new MediaUploadRequestDto(PostMediaType.IMAGE, CONTENT_TYPE_MP4, SMALL_IMAGE_SIZE)))
                 .isInstanceOf(InvalidMediaException.class);
 
         verifyNoInteractions(mediaStoragePort);
@@ -111,7 +143,7 @@ class MediaServiceTest {
     @DisplayName("rejects a file that exceeds the configured maximum size")
     void shouldRejectOversizeFile() {
         assertThatThrownBy(() -> mediaService.createUpload(
-                new MediaUploadRequestDto(PostMediaType.IMAGE, "image/png", MAX_IMAGE_BYTES + 1)))
+                new MediaUploadRequestDto(PostMediaType.IMAGE, CONTENT_TYPE_PNG, OVERSIZE_IMAGE)))
                 .isInstanceOf(InvalidMediaException.class);
 
         verify(mediaStoragePort, never()).createUploadUrl(anyString(), anyString());
@@ -120,9 +152,8 @@ class MediaServiceTest {
     @Test
     @DisplayName("delegates download url resolution to the storage port")
     void shouldResolveDownloadUrl() {
-        String objectKey = "posts/2b0f0c8e-cat.png";
-        when(mediaStoragePort.createDownloadUrl(objectKey)).thenReturn(UPLOAD_URL);
+        when(mediaStoragePort.createDownloadUrl(EXISTING_OBJECT_KEY)).thenReturn(PRESIGNED_URL);
 
-        assertThat(mediaService.resolveDownloadUrl(objectKey)).isEqualTo(UPLOAD_URL);
+        assertThat(mediaService.resolveDownloadUrl(EXISTING_OBJECT_KEY)).isEqualTo(PRESIGNED_URL);
     }
 }
