@@ -4,8 +4,6 @@ import java.util.List;
 
 public record StorageUploadProperties(
         long maxImageBytes,
-        long maxVideoBytes,
-        List<String> allowedImageContentTypes,
-        List<String> allowedVideoContentTypes
+        List<String> allowedImageContentTypes
 ) {
 }

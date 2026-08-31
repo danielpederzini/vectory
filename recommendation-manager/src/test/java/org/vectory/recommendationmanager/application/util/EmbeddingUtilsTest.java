@@ -18,7 +18,7 @@ class EmbeddingUtilsTest {
     static Stream<Arguments> postDescriptions() {
         return Stream.of(
                 Arguments.of("  hello world  ", PostMediaType.IMAGE, "hello world"),
-                Arguments.of("   ", PostMediaType.VIDEO, "video"),
+                Arguments.of("   ", PostMediaType.IMAGE, "image"),
                 Arguments.of(null, PostMediaType.IMAGE, "image"),
                 Arguments.of(null, null, DEFAULT_DESCRIPTION)
         );

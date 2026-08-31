@@ -21,7 +21,7 @@ class EventDeserializationTest {
     private static final String AUTHOR_ID = "55555555-5555-5555-5555-555555555555";
     private static final String USER_ID = "22222222-2222-2222-2222-222222222222";
     private static final String INTERACTION_ID = "33333333-3333-3333-3333-333333333333";
-    private static final String MEDIA_URL = "http://x/y.png";
+    private static final String OBJECT_KEY = "posts/2b0f0c8e-cat.png";
     private static final Instant CREATION_INSTANT = Instant.parse("2026-01-15T10:15:30Z");
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -34,10 +34,10 @@ class EventDeserializationTest {
                   "postId": "%s",
                   "authorId": "%s",
                   "text": "hello",
-                  "media": { "mediaType": "IMAGE", "mediaUrl": "%s" },
+                  "media": { "mediaType": "IMAGE", "objectKey": "%s" },
                   "creationInstant": "%s"
                 }
-                """.formatted(POST_ID, AUTHOR_ID, MEDIA_URL, CREATION_INSTANT);
+                """.formatted(POST_ID, AUTHOR_ID, OBJECT_KEY, CREATION_INSTANT);
 
         PostCreatedEvent event = objectMapper.readValue(json, PostCreatedEvent.class);
 
@@ -45,7 +45,7 @@ class EventDeserializationTest {
         assertThat(event.authorId()).isEqualTo(UUID.fromString(AUTHOR_ID));
         assertThat(event.text()).isEqualTo("hello");
         assertThat(event.media().mediaType()).isEqualTo(PostMediaType.IMAGE);
-        assertThat(event.media().mediaUrl()).isEqualTo(MEDIA_URL);
+        assertThat(event.media().objectKey()).isEqualTo(OBJECT_KEY);
         assertThat(event.creationInstant()).isEqualTo(CREATION_INSTANT);
     }
 

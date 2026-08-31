@@ -30,7 +30,7 @@ public class PostEmbeddingEntity {
     private UUID postId;
 
     @JdbcTypeCode(SqlTypes.VECTOR)
-    @Array(length = 1536)
+    @Array(length = 1024)
     @Column(nullable = false)
     private float[] embedding;
 

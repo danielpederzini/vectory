@@ -36,26 +36,20 @@ import static org.mockito.Mockito.when;
 class MediaServiceTest {
 
     private static final String CONTENT_TYPE_JPEG = "image/jpeg";
+    private static final String CONTENT_TYPE_JPEG_MIXED_CASE = "Image/JPEG";
     private static final String CONTENT_TYPE_PNG = "image/png";
-    private static final String CONTENT_TYPE_QUICKTIME = "video/quicktime";
-    private static final String CONTENT_TYPE_QUICKTIME_MIXED_CASE = "VIDEO/QuickTime";
-    private static final String CONTENT_TYPE_MP4 = "video/mp4";
+    private static final String CONTENT_TYPE_PDF = "application/pdf";
     private static final String CONTENT_TYPE_HEADER = "Content-Type";
 
     private static final List<String> ALLOWED_IMAGE_CONTENT_TYPES =
             List.of(CONTENT_TYPE_JPEG, CONTENT_TYPE_PNG, "image/webp", "image/gif");
-    private static final List<String> ALLOWED_VIDEO_CONTENT_TYPES =
-            List.of(CONTENT_TYPE_MP4, "video/webm", CONTENT_TYPE_QUICKTIME);
 
     private static final String OBJECT_KEY_PREFIX = "posts/";
     private static final String JPG_EXTENSION = ".jpg";
-    private static final String MOV_EXTENSION = ".mov";
     private static final String EXISTING_OBJECT_KEY = "posts/2b0f0c8e-cat.png";
 
     private static final long MAX_IMAGE_BYTES = 10_485_760L;
-    private static final long MAX_VIDEO_BYTES = 104_857_600L;
     private static final long SMALL_IMAGE_SIZE = 2_048L;
-    private static final long SMALL_VIDEO_SIZE = 4_096L;
     private static final long OVERSIZE_IMAGE = MAX_IMAGE_BYTES + 1;
 
     private static final String INTERNAL_ENDPOINT = "http://minio:9000";
@@ -91,9 +85,7 @@ class MediaServiceTest {
                 new StoragePresignProperties(PUT_TTL, GET_TTL),
                 new StorageUploadProperties(
                         MAX_IMAGE_BYTES,
-                        MAX_VIDEO_BYTES,
-                        ALLOWED_IMAGE_CONTENT_TYPES,
-                        ALLOWED_VIDEO_CONTENT_TYPES)
+                        ALLOWED_IMAGE_CONTENT_TYPES)
         );
         mediaService = new MediaService(mediaStoragePort, properties);
     }
@@ -119,21 +111,21 @@ class MediaServiceTest {
     @Test
     @DisplayName("normalizes the content type to lower case and maps known extensions")
     void shouldNormalizeContentTypeAndMapExtension() {
-        when(mediaStoragePort.createUploadUrl(anyString(), eq(CONTENT_TYPE_QUICKTIME)))
+        when(mediaStoragePort.createUploadUrl(anyString(), eq(CONTENT_TYPE_JPEG)))
                 .thenReturn(new PresignedUpload(PRESIGNED_URL, EXPIRES_AT));
 
         MediaUploadResponseDto response = mediaService.createUpload(
-                new MediaUploadRequestDto(PostMediaType.VIDEO, CONTENT_TYPE_QUICKTIME_MIXED_CASE, SMALL_VIDEO_SIZE));
+                new MediaUploadRequestDto(PostMediaType.IMAGE, CONTENT_TYPE_JPEG_MIXED_CASE, SMALL_IMAGE_SIZE));
 
-        assertThat(response.objectKey()).endsWith(MOV_EXTENSION);
-        assertThat(response.requiredHeaders()).containsEntry(CONTENT_TYPE_HEADER, CONTENT_TYPE_QUICKTIME);
+        assertThat(response.objectKey()).endsWith(JPG_EXTENSION);
+        assertThat(response.requiredHeaders()).containsEntry(CONTENT_TYPE_HEADER, CONTENT_TYPE_JPEG);
     }
 
     @Test
     @DisplayName("rejects a content type that is not allowed for the media type")
     void shouldRejectDisallowedContentType() {
         assertThatThrownBy(() -> mediaService.createUpload(
-                new MediaUploadRequestDto(PostMediaType.IMAGE, CONTENT_TYPE_MP4, SMALL_IMAGE_SIZE)))
+                new MediaUploadRequestDto(PostMediaType.IMAGE, CONTENT_TYPE_PDF, SMALL_IMAGE_SIZE)))
                 .isInstanceOf(InvalidMediaException.class);
 
         verifyNoInteractions(mediaStoragePort);
