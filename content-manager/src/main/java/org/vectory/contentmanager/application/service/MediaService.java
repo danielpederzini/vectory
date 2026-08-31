@@ -33,9 +33,7 @@ public class MediaService {
             "file size %d exceeds maximum %d for %s";
 
     private static final Map<String, String> EXTENSION_BY_SUBTYPE = Map.of(
-            "jpeg", "jpg",
-            "quicktime", "mov",
-            "x-matroska", "mkv"
+            "jpeg", "jpg"
     );
 
     private final MediaStoragePort mediaStoragePort;
@@ -63,8 +61,8 @@ public class MediaService {
 
     private void validate(PostMediaType mediaType, String contentType, long sizeBytes) {
         StorageUploadProperties upload = storageProperties.upload();
-        List<String> allowedTypes = allowedContentTypes(mediaType, upload);
-        long maxBytes = maxBytes(mediaType, upload);
+        List<String> allowedTypes = upload.allowedImageContentTypes();
+        long maxBytes = upload.maxImageBytes();
 
         if (!allowedTypes.contains(contentType)) {
             throw new InvalidMediaException(
@@ -75,16 +73,6 @@ public class MediaService {
             throw new InvalidMediaException(
                     FILE_TOO_LARGE_MESSAGE.formatted(sizeBytes, maxBytes, mediaType));
         }
-    }
-
-    private List<String> allowedContentTypes(PostMediaType mediaType, StorageUploadProperties upload) {
-        return mediaType == PostMediaType.VIDEO
-                ? upload.allowedVideoContentTypes()
-                : upload.allowedImageContentTypes();
-    }
-
-    private long maxBytes(PostMediaType mediaType, StorageUploadProperties upload) {
-        return mediaType == PostMediaType.VIDEO ? upload.maxVideoBytes() : upload.maxImageBytes();
     }
 
     private String buildObjectKey(String contentType) {

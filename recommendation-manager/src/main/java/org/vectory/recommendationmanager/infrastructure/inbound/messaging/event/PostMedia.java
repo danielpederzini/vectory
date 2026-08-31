@@ -4,6 +4,6 @@ import org.vectory.recommendationmanager.domain.enums.PostMediaType;
 
 public record PostMedia(
         PostMediaType mediaType,
-        String mediaUrl
+        String objectKey
 ) {
 }

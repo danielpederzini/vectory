@@ -23,11 +23,18 @@ spring:
 
 recommendation-manager:
   embedding:
-    base-url: ${EMBEDDING_BASE_URL:https://api.openai.com}
+    base-url: ${EMBEDDING_BASE_URL:https://api.jina.ai}
     path: ${EMBEDDING_PATH:/v1/embeddings}
     api-key: ${EMBEDDING_API_KEY:}
-    model: ${EMBEDDING_MODEL:text-embedding-3-small}
-    dimensions: ${EMBEDDING_DIMENSIONS:1536}
+    model: ${EMBEDDING_MODEL:jina-clip-v2}
+    dimensions: ${EMBEDDING_DIMENSIONS:1024}
+  storage:
+    endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}
+    region: ${STORAGE_REGION:us-east-1}
+    bucket: ${STORAGE_BUCKET:vectory-media}
+    access-key: ${STORAGE_ACCESS_KEY:minioadmin}
+    secret-key: ${STORAGE_SECRET_KEY:minioadmin}
+    path-style-access: ${STORAGE_PATH_STYLE:true}
   interaction:
     weights:
       VIEW: 0.1
