@@ -1,10 +1,8 @@
 package org.vectory.recommendationmanager.infrastructure.outbound.persistence.repository;
 
-import jakarta.persistence.LockModeType;
-import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Lock;
-import org.springframework.data.jpa.repository.QueryHints;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.vectory.recommendationmanager.infrastructure.outbound.persistence.entity.InteractionEntity;
 
@@ -14,7 +12,13 @@ import java.util.UUID;
 @Repository
 public interface InteractionRepository extends JpaRepository<InteractionEntity, UUID> {
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @QueryHints(@jakarta.persistence.QueryHint(name = "jakarta.persistence.lock.timeout", value = "-2"))
-    List<InteractionEntity> findByProcessedInstantIsNullOrderByCreationInstantAsc(Limit limit);
+    @Query(value = """
+            SELECT * FROM interactions
+            WHERE processed_instant IS NULL
+            ORDER BY creation_instant ASC, id ASC
+            LIMIT :limit
+            FOR UPDATE SKIP LOCKED
+            """, nativeQuery = true)
+    List<InteractionEntity> claimUnprocessed(@Param("limit") int limit);
+
 }

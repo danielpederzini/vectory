@@ -3,6 +3,8 @@ package org.vectory.recommendationmanager.domain.util;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 
+import java.util.StringJoiner;
+
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class VectorUtils {
 
@@ -24,6 +26,23 @@ public final class VectorUtils {
 
     public static float[] zeros(int dimensions) {
         return new float[dimensions];
+    }
+
+    public static boolean isZeroVector(float[] vector) {
+        for (float value : vector) {
+            if (value != 0.0f) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static String toPgVectorLiteral(float[] vector) {
+        StringJoiner vectorComponents = new StringJoiner(",", "[", "]");
+        for (float value : vector) {
+            vectorComponents.add(Float.toString(value));
+        }
+        return vectorComponents.toString();
     }
 
     public static float[] average(java.util.List<float[]> vectors) {

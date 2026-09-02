@@ -61,6 +61,17 @@ class VectorUtilsTest {
         assertThat(result).containsExactly(new float[]{2.0f, 8.0f}, OFFSET);
     }
 
+    @Test
+    @DisplayName("identifies zero vectors and formats vectors for pgvector queries")
+    void shouldSupportFeedVectorOperations() {
+        float[] zeroVector = {0.0f, 0.0f};
+        float[] nonZeroVector = {1.5f, -0.25f};
+
+        assertThat(VectorUtils.isZeroVector(zeroVector)).isTrue();
+        assertThat(VectorUtils.isZeroVector(nonZeroVector)).isFalse();
+        assertThat(VectorUtils.toPgVectorLiteral(nonZeroVector)).isEqualTo("[1.5,-0.25]");
+    }
+
     static Stream<Arguments> invalidInputs() {
         return Stream.of(
                 Arguments.of("weightedAverage rejects a zero total weight",

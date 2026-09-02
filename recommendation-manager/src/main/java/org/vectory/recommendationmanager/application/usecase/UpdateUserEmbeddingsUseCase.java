@@ -2,7 +2,6 @@ package org.vectory.recommendationmanager.application.usecase;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Limit;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,7 +38,7 @@ public class UpdateUserEmbeddingsUseCase implements RunnableUseCase {
     @Transactional
     public void execute() {
         List<InteractionEntity> pending = interactionRepository
-                .findByProcessedInstantIsNullOrderByCreationInstantAsc(Limit.of(properties.cron().batchSize()));
+                .claimUnprocessed(properties.cron().batchSize());
         if (pending.isEmpty()) {
             return;
         }

@@ -6,9 +6,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.Limit;
 import org.vectory.recommendationmanager.domain.enums.InteractionType;
 import org.vectory.recommendationmanager.infrastructure.config.CronProperties;
+import org.vectory.recommendationmanager.infrastructure.config.FeedProperties;
+import org.vectory.recommendationmanager.infrastructure.config.FeedRankingWeights;
 import org.vectory.recommendationmanager.infrastructure.config.InteractionProperties;
 import org.vectory.recommendationmanager.infrastructure.config.RecommendationProperties;
 import org.vectory.recommendationmanager.infrastructure.config.UserEmbeddingProperties;
@@ -68,7 +69,8 @@ class UpdateUserEmbeddingsUseCaseTest {
                         InteractionType.SAVE, 0.7,
                         InteractionType.SHARE, 1.0)),
                 new UserEmbeddingProperties(ALPHA),
-                new CronProperties(Duration.ofMinutes(5), BATCH_SIZE));
+                new CronProperties(Duration.ofMinutes(5), BATCH_SIZE),
+                new FeedProperties(500, 20, 50, Duration.ofDays(7), new FeedRankingWeights(0.65, 0.25, 0.10)));
         useCase = new UpdateUserEmbeddingsUseCase(
                 interactionRepository, postEmbeddingRepository, userEmbeddingRepository, properties);
     }
@@ -94,7 +96,7 @@ class UpdateUserEmbeddingsUseCaseTest {
     }
 
     private void givenPending(List<InteractionEntity> interactions) {
-        when(interactionRepository.findByProcessedInstantIsNullOrderByCreationInstantAsc(any(Limit.class)))
+        when(interactionRepository.claimUnprocessed(any(int.class)))
                 .thenReturn(interactions);
     }
 
