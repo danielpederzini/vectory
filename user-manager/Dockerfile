@@ -6,11 +6,16 @@ ARG JRE_IMAGE=eclipse-temurin:25-jre
 FROM ${JDK_IMAGE} AS build
 WORKDIR /workspace
 
-# Dependency layer: copy build scripts + wrapper first for caching
+# Bootstrap the shared Gradle distribution before module-specific build files.
+# The wrapper and wrapper JAR are identical across services, so Docker can reuse
+# this layer rather than downloading Gradle once per service image.
 COPY gradlew ./
 COPY gradle ./gradle
+RUN chmod +x gradlew && ./gradlew --version --no-daemon
+
+# Dependency layer: module-specific dependencies can be cached independently.
 COPY settings.gradle.kts build.gradle.kts ./
-RUN chmod +x gradlew && ./gradlew dependencies --no-daemon || true
+RUN ./gradlew dependencies --no-daemon || true
 
 # Build the application
 COPY src ./src
