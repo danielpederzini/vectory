@@ -10,7 +10,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.vectory.recommendationmanager.application.port.EmbeddingFactory;
 import org.vectory.recommendationmanager.application.port.EmbeddingRequest;
 import org.vectory.recommendationmanager.application.port.FetchedMedia;
-import org.vectory.recommendationmanager.application.port.MediaFetchPort;
+import org.vectory.recommendationmanager.application.port.MediaFetchProvider;
 import org.vectory.recommendationmanager.domain.enums.PostMediaType;
 import org.vectory.recommendationmanager.infrastructure.inbound.messaging.event.PostCreatedEvent;
 import org.vectory.recommendationmanager.infrastructure.inbound.messaging.event.PostMedia;
@@ -45,7 +45,7 @@ class ConsumePostCreatedEventUseCaseTest {
     private EmbeddingFactory embeddingFactory;
 
     @Mock
-    private MediaFetchPort mediaFetchPort;
+    private MediaFetchProvider mediaFetchProvider;
 
     @InjectMocks
     private ConsumePostCreatedEventUseCase useCase;
@@ -58,7 +58,7 @@ class ConsumePostCreatedEventUseCaseTest {
 
         useCase.execute(event);
 
-        verifyNoInteractions(mediaFetchPort);
+        verifyNoInteractions(mediaFetchProvider);
         ArgumentCaptor<EmbeddingRequest> requestCaptor = ArgumentCaptor.forClass(EmbeddingRequest.class);
         verify(embeddingFactory).embed(requestCaptor.capture());
         assertThat(requestCaptor.getValue().text()).isEqualTo("great post");
@@ -70,14 +70,14 @@ class ConsumePostCreatedEventUseCaseTest {
     @Test
     @DisplayName("embeds an image post from its text and fetched image bytes")
     void shouldEmbedImagePostWithFetchedBytes() {
-        when(mediaFetchPort.fetch(OBJECT_KEY)).thenReturn(new FetchedMedia(IMAGE_BYTES, IMAGE_CONTENT_TYPE));
+        when(mediaFetchProvider.fetch(OBJECT_KEY)).thenReturn(new FetchedMedia(IMAGE_BYTES, IMAGE_CONTENT_TYPE));
         when(embeddingFactory.embed(any(EmbeddingRequest.class))).thenReturn(EMBEDDING);
         PostMedia media = new PostMedia(PostMediaType.IMAGE, OBJECT_KEY);
         PostCreatedEvent event = new PostCreatedEvent(POST_ID, AUTHOR_ID, "a cat", media, CREATION_INSTANT);
 
         useCase.execute(event);
 
-        verify(mediaFetchPort).fetch(OBJECT_KEY);
+        verify(mediaFetchProvider).fetch(OBJECT_KEY);
         ArgumentCaptor<EmbeddingRequest> requestCaptor = ArgumentCaptor.forClass(EmbeddingRequest.class);
         verify(embeddingFactory).embed(requestCaptor.capture());
         EmbeddingRequest request = requestCaptor.getValue();

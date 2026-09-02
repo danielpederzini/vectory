@@ -7,7 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.vectory.recommendationmanager.application.port.EmbeddingFactory;
 import org.vectory.recommendationmanager.application.port.EmbeddingRequest;
 import org.vectory.recommendationmanager.application.port.FetchedMedia;
-import org.vectory.recommendationmanager.application.port.MediaFetchPort;
+import org.vectory.recommendationmanager.application.port.MediaFetchProvider;
 import org.vectory.recommendationmanager.application.util.EmbeddingUtils;
 import org.vectory.recommendationmanager.infrastructure.inbound.messaging.event.PostCreatedEvent;
 import org.vectory.recommendationmanager.infrastructure.inbound.messaging.event.PostMedia;
@@ -21,7 +21,7 @@ public class ConsumePostCreatedEventUseCase implements VoidUseCase<PostCreatedEv
 
     private final PostEmbeddingRepository postEmbeddingRepository;
     private final EmbeddingFactory embeddingFactory;
-    private final MediaFetchPort mediaFetchPort;
+    private final MediaFetchProvider mediaFetchProvider;
 
     @Override
     @Transactional
@@ -41,7 +41,7 @@ public class ConsumePostCreatedEventUseCase implements VoidUseCase<PostCreatedEv
     private EmbeddingRequest buildEmbeddingRequest(PostCreatedEvent event) {
         PostMedia media = event.media();
         if (media != null && media.objectKey() != null) {
-            FetchedMedia fetched = mediaFetchPort.fetch(media.objectKey());
+            FetchedMedia fetched = mediaFetchProvider.fetch(media.objectKey());
             return new EmbeddingRequest(event.text(), fetched.bytes(), fetched.contentType());
         }
 
