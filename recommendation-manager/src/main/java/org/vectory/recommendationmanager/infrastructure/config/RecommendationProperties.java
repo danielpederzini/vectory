@@ -6,6 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record RecommendationProperties(
         InteractionProperties interaction,
         UserEmbeddingProperties userEmbedding,
-        CronProperties cron
+        CronProperties cron,
+        FeedProperties feed
 ) {
 }

@@ -1,8 +1,6 @@
 spring:
   application:
     name: recommendation-manager
-  main:
-    web-application-type: none
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:recommendation_manager}
     username: ${DB_USERNAME:postgres}
@@ -46,3 +44,12 @@ recommendation-manager:
   cron:
     fixed-delay: ${CRON_FIXED_DELAY:PT5M}
     batch-size: ${CRON_BATCH_SIZE:500}
+  feed:
+    candidate-limit: ${FEED_CANDIDATE_LIMIT:500}
+    default-limit: ${FEED_DEFAULT_LIMIT:20}
+    max-limit: ${FEED_MAX_LIMIT:50}
+    recency-half-life: ${FEED_RECENCY_HALF_LIFE:P7D}
+    weights:
+      semantic: ${FEED_SEMANTIC_WEIGHT:0.65}
+      recency: ${FEED_RECENCY_WEIGHT:0.25}
+      popularity: ${FEED_POPULARITY_WEIGHT:0.10}
