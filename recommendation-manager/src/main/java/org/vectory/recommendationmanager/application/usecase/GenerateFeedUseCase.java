@@ -1,10 +1,10 @@
 package org.vectory.recommendationmanager.application.usecase;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
-import org.springframework.http.HttpStatus;
 import org.vectory.recommendationmanager.infrastructure.config.FeedProperties;
 import org.vectory.recommendationmanager.infrastructure.config.FeedRankingWeights;
 import org.vectory.recommendationmanager.infrastructure.config.RecommendationProperties;
@@ -37,70 +37,87 @@ public class GenerateFeedUseCase {
 
     @Transactional(readOnly = true)
     public FeedResponseDto execute(UUID userId, int limit, int offset) {
-        FeedProperties feed = properties.feed();
-        validatePagination(limit, offset, feed);
+        FeedProperties feedProperties = properties.feed();
+        validatePagination(limit, offset, feedProperties);
 
-        UserEmbeddingEntity user = userEmbeddingRepository.findById(userId).orElse(null);
-        boolean personalized = user != null && hasUsableEmbedding(user.getEmbedding());
-        List<FeedCandidate> candidates = personalized
-                ? postEmbeddingRepository.findPersonalizedCandidates(userId, vectorLiteral(user.getEmbedding()), feed.candidateLimit())
-                : postEmbeddingRepository.findColdStartCandidates(userId, feed.candidateLimit());
+        UserEmbeddingEntity userEmbeddingEntity = userEmbeddingRepository.findById(userId).orElse(null);
+        boolean hasPersonalizedEmbedding = userEmbeddingEntity != null
+                && hasUsableEmbedding(userEmbeddingEntity.getEmbedding());
+        List<FeedCandidate> feedCandidates = hasPersonalizedEmbedding
+                ? postEmbeddingRepository.findPersonalizedCandidates(
+                        userId, vectorLiteral(userEmbeddingEntity.getEmbedding()), feedProperties.candidateLimit())
+                : postEmbeddingRepository.findColdStartCandidates(userId, feedProperties.candidateLimit());
 
-        List<ScoredCandidate> ranked = rank(candidates, personalized, Instant.now());
-        List<FeedItemResponseDto> items = ranked.stream()
+        List<RankedPostCandidate> rankedPostCandidates = rankFeedCandidates(
+                feedCandidates, hasPersonalizedEmbedding, Instant.now());
+        List<FeedItemResponseDto> feedItems = rankedPostCandidates.stream()
                 .skip(offset)
                 .limit(limit)
-                .map(candidate -> new FeedItemResponseDto(candidate.postId(), candidate.score()))
+                .map(rankedPostCandidate -> new FeedItemResponseDto(
+                        rankedPostCandidate.postId(), rankedPostCandidate.rankingScore()))
                 .toList();
 
-        return new FeedResponseDto(userId, items, limit, offset, offset + items.size() < ranked.size(), Instant.now());
+        return new FeedResponseDto(userId, feedItems, limit, offset,
+                offset + feedItems.size() < rankedPostCandidates.size(), Instant.now());
     }
 
-    private List<ScoredCandidate> rank(List<FeedCandidate> candidates, boolean personalized, Instant now) {
-        if (candidates.isEmpty()) {
+    private List<RankedPostCandidate> rankFeedCandidates(List<FeedCandidate> feedCandidates,
+                                                           boolean hasPersonalizedEmbedding,
+                                                           Instant currentInstant) {
+        if (feedCandidates.isEmpty()) {
             return List.of();
         }
 
-        Map<UUID, Double> popularity = popularityByPost(candidates);
-        double maxPopularity = popularity.values().stream().mapToDouble(Double::doubleValue).max().orElse(0.0);
-        FeedProperties feed = properties.feed();
+        Map<UUID, Double> popularityByPost = calculatePopularityByPost(feedCandidates);
+        double maximumPopularity = popularityByPost.values().stream()
+                .mapToDouble(Double::doubleValue).max().orElse(0.0);
+        FeedProperties feedProperties = properties.feed();
 
-        return candidates.stream()
-                .map(candidate -> score(candidate, popularity.getOrDefault(candidate.getPostId(), 0.0),
-                        maxPopularity, personalized, feed, now))
-                .sorted(Comparator.comparingDouble(ScoredCandidate::score).reversed()
-                        .thenComparing(candidate -> candidate.postId().toString()))
+        return feedCandidates.stream()
+                .map(feedCandidate -> calculateRankingScore(feedCandidate,
+                        popularityByPost.getOrDefault(feedCandidate.getPostId(), 0.0), maximumPopularity,
+                        hasPersonalizedEmbedding, feedProperties, currentInstant))
+                .sorted(Comparator.comparingDouble(RankedPostCandidate::rankingScore).reversed()
+                        .thenComparing(rankedPostCandidate -> rankedPostCandidate.postId().toString()))
                 .toList();
     }
 
-    private Map<UUID, Double> popularityByPost(List<FeedCandidate> candidates) {
-        List<UUID> postIds = candidates.stream().map(FeedCandidate::getPostId).toList();
-        Map<UUID, Double> popularity = new HashMap<>();
-        for (PostPopularity count : interactionRepository.countByPostIdAndType(postIds)) {
-            double weight = properties.interaction().weights().getOrDefault(count.getType(), 0.0);
-            popularity.merge(count.getPostId(), weight * count.getInteractionCount(), Double::sum);
+    private Map<UUID, Double> calculatePopularityByPost(List<FeedCandidate> feedCandidates) {
+        List<UUID> candidatePostIds = feedCandidates.stream().map(FeedCandidate::getPostId).toList();
+        Map<UUID, Double> popularityByPost = new HashMap<>();
+        for (PostPopularity postPopularity : interactionRepository.countByPostIdAndType(candidatePostIds)) {
+            double interactionWeight = properties.interaction().weights()
+                    .getOrDefault(postPopularity.getType(), 0.0);
+            popularityByPost.merge(postPopularity.getPostId(),
+                    interactionWeight * postPopularity.getInteractionCount(), Double::sum);
         }
-        return popularity;
+        return popularityByPost;
     }
 
-    private ScoredCandidate score(FeedCandidate candidate, double popularity, double maxPopularity,
-                                  boolean personalized, FeedProperties feed, Instant now) {
-        FeedRankingWeights weights = feed.weights();
-        double semantic = personalized ? clamp((candidate.getSimilarity() + 1.0) / 2.0) : 0.0;
-        double recency = recencyScore(candidate.getCreationInstant(), now, feed.recencyHalfLife());
-        double popularityScore = maxPopularity == 0.0 ? 0.0 : Math.log1p(popularity) / Math.log1p(maxPopularity);
-        double weightTotal = personalized
-                ? weights.semantic() + weights.recency() + weights.popularity()
-                : weights.recency() + weights.popularity();
-        double rawScore = personalized
-                ? weights.semantic() * semantic + weights.recency() * recency + weights.popularity() * popularityScore
-                : weights.recency() * recency + weights.popularity() * popularityScore;
-        return new ScoredCandidate(candidate.getPostId(), weightTotal == 0.0 ? 0.0 : rawScore / weightTotal);
+    private RankedPostCandidate calculateRankingScore(FeedCandidate feedCandidate, double postPopularity,
+                                                       double maximumPopularity, boolean hasPersonalizedEmbedding,
+                                                       FeedProperties feedProperties, Instant currentInstant) {
+        FeedRankingWeights rankingWeights = feedProperties.weights();
+        double semanticSimilarityScore = hasPersonalizedEmbedding
+                ? clamp((feedCandidate.getSimilarity() + 1.0) / 2.0) : 0.0;
+        double recencyScore = calculateRecencyScore(
+                feedCandidate.getCreationInstant(), currentInstant, feedProperties.recencyHalfLife());
+        double popularityScore = maximumPopularity == 0.0
+                ? 0.0 : Math.log1p(postPopularity) / Math.log1p(maximumPopularity);
+        double activeRankingWeightTotal = hasPersonalizedEmbedding
+                ? rankingWeights.semantic() + rankingWeights.recency() + rankingWeights.popularity()
+                : rankingWeights.recency() + rankingWeights.popularity();
+        double weightedRankingScore = hasPersonalizedEmbedding
+                ? rankingWeights.semantic() * semanticSimilarityScore + rankingWeights.recency() * recencyScore
+                + rankingWeights.popularity() * popularityScore
+                : rankingWeights.recency() * recencyScore + rankingWeights.popularity() * popularityScore;
+        return new RankedPostCandidate(feedCandidate.getPostId(), activeRankingWeightTotal == 0.0
+                ? 0.0 : weightedRankingScore / activeRankingWeightTotal);
     }
 
-    private double recencyScore(Instant creationInstant, Instant now, Duration halfLife) {
-        double ageSeconds = Math.max(0, Duration.between(creationInstant, now).toSeconds());
-        return Math.exp(-Math.log(2) * ageSeconds / halfLife.toSeconds());
+    private double calculateRecencyScore(Instant creationInstant, Instant currentInstant, Duration recencyHalfLife) {
+        double postAgeSeconds = Math.max(0, Duration.between(creationInstant, currentInstant).toSeconds());
+        return Math.exp(-Math.log(2) * postAgeSeconds / recencyHalfLife.toSeconds());
     }
 
     private boolean hasUsableEmbedding(float[] embedding) {
@@ -134,6 +151,4 @@ public class GenerateFeedUseCase {
         return Math.max(0.0, Math.min(1.0, value));
     }
 
-    private record ScoredCandidate(UUID postId, double score) {
-    }
 }
