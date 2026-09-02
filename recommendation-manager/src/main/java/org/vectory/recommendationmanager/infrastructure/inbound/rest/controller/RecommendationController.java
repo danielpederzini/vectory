@@ -10,7 +10,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.validation.annotation.Validated;
 import org.vectory.recommendationmanager.application.usecase.GenerateFeedUseCase;
-import org.vectory.recommendationmanager.infrastructure.config.RecommendationProperties;
 import org.vectory.recommendationmanager.infrastructure.inbound.rest.dto.FeedResponseDto;
 
 import java.util.UUID;
@@ -22,7 +21,6 @@ import java.util.UUID;
 public class RecommendationController {
 
     private final GenerateFeedUseCase generateFeedUseCase;
-    private final RecommendationProperties properties;
 
     @GetMapping("/{userId}")
     public ResponseEntity<FeedResponseDto> getFeed(
@@ -30,7 +28,6 @@ public class RecommendationController {
             @RequestParam(required = false) Integer limit,
             @RequestParam(defaultValue = "0") @Min(0) int offset
     ) {
-        int requestedLimit = limit == null ? properties.feed().defaultLimit() : limit;
-        return ResponseEntity.ok(generateFeedUseCase.execute(userId, requestedLimit, offset));
+        return ResponseEntity.ok(generateFeedUseCase.execute(userId, limit, offset));
     }
 }

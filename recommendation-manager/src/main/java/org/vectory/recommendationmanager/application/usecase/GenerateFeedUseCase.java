@@ -31,39 +31,31 @@ public class GenerateFeedUseCase {
     private final RecommendationProperties recommendationProperties;
 
     @Transactional(readOnly = true)
-    public FeedResponseDto execute(UUID userId, int requestedPageSize, int requestedOffset) {
+    public FeedResponseDto execute(UUID userId, Integer requestedPageSize, int requestedOffset) {
         FeedProperties feedProperties = recommendationProperties.feed();
-        validatePagination(requestedPageSize, requestedOffset, feedProperties);
-
-        UserEmbeddingEntity userEmbeddingEntity = userEmbeddingRepository.findById(userId).orElse(null);
-        boolean hasPersonalizedEmbedding = userEmbeddingEntity != null
-                && !VectorUtils.isZeroVector(userEmbeddingEntity.getEmbedding());
-        String userEmbeddingVectorLiteral = null;
-        if (hasPersonalizedEmbedding) {
-            float[] userEmbedding = userEmbeddingEntity.getEmbedding();
-            userEmbeddingVectorLiteral = VectorUtils.toPgVectorLiteral(userEmbedding);
-        }
-        int requestedPostCount = requestedPageSize + 1;
+        int resolvedPageSize = resolvePageSize(requestedPageSize, feedProperties);
+        validatePagination(resolvedPageSize, requestedOffset, feedProperties);
         Instant feedGenerationInstant = Instant.now();
-
         List<RankedFeedPost> rankedFeedPosts = findRankedFeedPosts(
-                userId, userEmbeddingVectorLiteral, hasPersonalizedEmbedding, requestedPostCount,
-                requestedOffset, feedGenerationInstant, feedProperties);
-        boolean hasNextPage = rankedFeedPosts.size() > requestedPageSize;
-        List<FeedItemResponseDto> feedItems = rankedFeedPosts.stream()
-                .limit(requestedPageSize)
-                .map(rankedFeedPost -> new FeedItemResponseDto(
-                        rankedFeedPost.getPostId(), rankedFeedPost.getRankingScore()))
-                .toList();
+                userId, resolvedPageSize, requestedOffset, feedGenerationInstant, feedProperties);
+        boolean hasNextPage = hasNextPage(rankedFeedPosts, resolvedPageSize);
+        List<FeedItemResponseDto> feedItems = createFeedItems(rankedFeedPosts, resolvedPageSize);
 
-        return new FeedResponseDto(userId, feedItems, requestedPageSize, requestedOffset,
+        return new FeedResponseDto(userId, feedItems, resolvedPageSize, requestedOffset,
                 hasNextPage, feedGenerationInstant);
     }
 
-    private List<RankedFeedPost> findRankedFeedPosts(UUID userId, String userEmbeddingVectorLiteral,
-                                                      boolean hasPersonalizedEmbedding, int requestedPostCount,
+    private int resolvePageSize(Integer requestedPageSize, FeedProperties feedProperties) {
+        return requestedPageSize == null ? feedProperties.defaultLimit() : requestedPageSize;
+    }
+
+    private List<RankedFeedPost> findRankedFeedPosts(UUID userId, int resolvedPageSize,
                                                       int requestedOffset, Instant feedGenerationInstant,
                                                       FeedProperties feedProperties) {
+        UserEmbeddingEntity userEmbeddingEntity = userEmbeddingRepository.findById(userId).orElse(null);
+        boolean hasPersonalizedEmbedding = hasPersonalizedEmbedding(userEmbeddingEntity);
+        String userEmbeddingVectorLiteral = getUserEmbeddingVectorLiteral(userEmbeddingEntity, hasPersonalizedEmbedding);
+        int requestedPostCount = resolvedPageSize + 1;
         FeedRankingWeights rankingWeights = feedProperties.weights();
         Map<InteractionType, Double> interactionWeights = recommendationProperties.interaction().weights();
         double viewInteractionWeight = interactionWeights.getOrDefault(InteractionType.VIEW, 0.0);
@@ -88,6 +80,31 @@ public class GenerateFeedUseCase {
                 saveInteractionWeight,
                 shareInteractionWeight
         );
+    }
+
+    private boolean hasPersonalizedEmbedding(UserEmbeddingEntity userEmbeddingEntity) {
+        return userEmbeddingEntity != null && !VectorUtils.isZeroVector(userEmbeddingEntity.getEmbedding());
+    }
+
+    private String getUserEmbeddingVectorLiteral(UserEmbeddingEntity userEmbeddingEntity,
+                                                 boolean hasPersonalizedEmbedding) {
+        if (!hasPersonalizedEmbedding) {
+            return null;
+        }
+        float[] userEmbedding = userEmbeddingEntity.getEmbedding();
+        return VectorUtils.toPgVectorLiteral(userEmbedding);
+    }
+
+    private boolean hasNextPage(List<RankedFeedPost> rankedFeedPosts, int resolvedPageSize) {
+        return rankedFeedPosts.size() > resolvedPageSize;
+    }
+
+    private List<FeedItemResponseDto> createFeedItems(List<RankedFeedPost> rankedFeedPosts, int resolvedPageSize) {
+        return rankedFeedPosts.stream()
+                .limit(resolvedPageSize)
+                .map(rankedFeedPost -> new FeedItemResponseDto(
+                        rankedFeedPost.getPostId(), rankedFeedPost.getRankingScore()))
+                .toList();
     }
 
     private void validatePagination(int requestedPageSize, int requestedOffset, FeedProperties feedProperties) {
