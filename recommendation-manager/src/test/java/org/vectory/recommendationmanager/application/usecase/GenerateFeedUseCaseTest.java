@@ -15,10 +15,8 @@ import org.vectory.recommendationmanager.infrastructure.config.RecommendationPro
 import org.vectory.recommendationmanager.infrastructure.config.UserEmbeddingProperties;
 import org.vectory.recommendationmanager.infrastructure.inbound.rest.dto.FeedResponseDto;
 import org.vectory.recommendationmanager.infrastructure.outbound.persistence.entity.UserEmbeddingEntity;
-import org.vectory.recommendationmanager.infrastructure.outbound.persistence.repository.FeedCandidate;
-import org.vectory.recommendationmanager.infrastructure.outbound.persistence.repository.InteractionRepository;
 import org.vectory.recommendationmanager.infrastructure.outbound.persistence.repository.PostEmbeddingRepository;
-import org.vectory.recommendationmanager.infrastructure.outbound.persistence.repository.PostPopularity;
+import org.vectory.recommendationmanager.infrastructure.outbound.persistence.repository.RankedFeedPost;
 import org.vectory.recommendationmanager.infrastructure.outbound.persistence.repository.UserEmbeddingRepository;
 
 import java.time.Duration;
@@ -30,10 +28,13 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -42,90 +43,85 @@ import static org.mockito.Mockito.when;
 class GenerateFeedUseCaseTest {
 
     private static final UUID USER_ID = UUID.fromString("22222222-2222-2222-2222-222222222222");
-    private static final UUID POST_A = UUID.fromString("11111111-1111-1111-1111-111111111111");
-    private static final UUID POST_B = UUID.fromString("33333333-3333-3333-3333-333333333333");
+    private static final UUID FIRST_POST_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
 
     @Mock private UserEmbeddingRepository userEmbeddingRepository;
     @Mock private PostEmbeddingRepository postEmbeddingRepository;
-    @Mock private InteractionRepository interactionRepository;
 
-    private GenerateFeedUseCase useCase;
+    private GenerateFeedUseCase generateFeedUseCase;
 
     @BeforeEach
     void setUp() {
-        RecommendationProperties properties = new RecommendationProperties(
+        RecommendationProperties recommendationProperties = new RecommendationProperties(
                 new InteractionProperties(Map.of(InteractionType.LIKE, 1.0)),
                 new UserEmbeddingProperties(0.2),
                 new CronProperties(Duration.ofMinutes(5), 500),
                 new FeedProperties(500, 20, 50, Duration.ofDays(7), new FeedRankingWeights(0.65, 0.25, 0.10)));
-        useCase = new GenerateFeedUseCase(userEmbeddingRepository, postEmbeddingRepository, interactionRepository, properties);
+        generateFeedUseCase = new GenerateFeedUseCase(
+                userEmbeddingRepository, postEmbeddingRepository, recommendationProperties);
     }
 
     @Test
-    @DisplayName("uses vector candidates and ranks the most similar post first")
-    void shouldGeneratePersonalizedFeed() {
-        when(userEmbeddingRepository.findById(USER_ID)).thenReturn(Optional.of(user(new float[]{1, 0})));
-        when(postEmbeddingRepository.findPersonalizedCandidates(eq(USER_ID), anyString(), anyInt()))
-                .thenReturn(List.of(candidate(POST_A, 0.95, Instant.now().minus(Duration.ofDays(2))),
-                        candidate(POST_B, 0.20, Instant.now().minus(Duration.ofDays(2)))));
-        when(interactionRepository.countByPostIdAndType(any())).thenReturn(List.of());
+    @DisplayName("uses a personalized vector query when the user has a non-zero embedding")
+    void shouldUsePersonalizedFeedQuery() {
+        UserEmbeddingEntity userEmbeddingEntity = userEmbeddingEntity(new float[]{1, 0});
+        when(userEmbeddingRepository.findById(USER_ID)).thenReturn(Optional.of(userEmbeddingEntity));
+        stubRankedFeedPosts(List.of(rankedFeedPost(FIRST_POST_ID, 0.9)));
 
-        FeedResponseDto feed = useCase.execute(USER_ID, 20, 0);
+        FeedResponseDto feedResponse = generateFeedUseCase.execute(USER_ID, 20, 0);
 
-        verify(postEmbeddingRepository).findPersonalizedCandidates(eq(USER_ID), anyString(), eq(500));
-        verify(postEmbeddingRepository, never()).findColdStartCandidates(any(), anyInt());
-        assertThat(feed.items()).extracting(item -> item.postId()).containsExactly(POST_A, POST_B);
-        assertThat(feed.hasNext()).isFalse();
+        verify(postEmbeddingRepository).findRankedFeedPosts(
+                eq(USER_ID), anyString(), eq(true), eq(500), eq(21), eq(0), any(Instant.class), eq(604800L),
+                eq(0.65), eq(0.25), eq(0.10), eq(0.0), eq(1.0), eq(0.0), eq(0.0));
+        assertThat(feedResponse.items()).extracting(item -> item.postId()).containsExactly(FIRST_POST_ID);
     }
 
     @Test
-    @DisplayName("uses popularity and recency fallback for a user with a zero vector")
-    void shouldGenerateColdStartFeed() {
-        when(userEmbeddingRepository.findById(USER_ID)).thenReturn(Optional.of(user(new float[]{0, 0})));
-        when(postEmbeddingRepository.findColdStartCandidates(USER_ID, 500))
-                .thenReturn(List.of(candidate(POST_A, 0, Instant.now().minus(Duration.ofDays(1))),
-                        candidate(POST_B, 0, Instant.now().minus(Duration.ofDays(7)))));
-        when(interactionRepository.countByPostIdAndType(any()))
-                .thenReturn(List.of(popularity(POST_B, InteractionType.LIKE, 100)));
-
-        FeedResponseDto feed = useCase.execute(USER_ID, 1, 0);
-
-        verify(postEmbeddingRepository).findColdStartCandidates(USER_ID, 500);
-        assertThat(feed.items()).hasSize(1);
-        assertThat(feed.hasNext()).isTrue();
-    }
-
-    @Test
-    @DisplayName("paginates the already ranked candidate list")
-    void shouldPaginateRankedCandidates() {
+    @DisplayName("uses a cold-start query mode when no user embedding exists")
+    void shouldUseColdStartFeedQuery() {
         when(userEmbeddingRepository.findById(USER_ID)).thenReturn(Optional.empty());
-        when(postEmbeddingRepository.findColdStartCandidates(USER_ID, 500))
-                .thenReturn(List.of(candidate(POST_A, 0, Instant.now()), candidate(POST_B, 0, Instant.now().minusSeconds(1))));
-        when(interactionRepository.countByPostIdAndType(any())).thenReturn(List.of());
+        stubRankedFeedPosts(List.of(rankedFeedPost(FIRST_POST_ID, 0.9)));
 
-        FeedResponseDto feed = useCase.execute(USER_ID, 1, 1);
+        generateFeedUseCase.execute(USER_ID, 20, 0);
 
-        assertThat(feed.items()).extracting(item -> item.postId()).containsExactly(POST_B);
-        assertThat(feed.hasNext()).isFalse();
+        verify(postEmbeddingRepository).findRankedFeedPosts(
+                eq(USER_ID), any(), eq(false), eq(500), eq(21), eq(0), any(Instant.class), eq(604800L),
+                anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble());
     }
 
-    private static UserEmbeddingEntity user(float[] vector) {
-        return UserEmbeddingEntity.builder().userId(USER_ID).embedding(vector).updatedInstant(Instant.now()).build();
+    @Test
+    @DisplayName("uses one additional result to identify whether another page exists")
+    void shouldIdentifyNextPageFromAdditionalRankedPost() {
+        when(userEmbeddingRepository.findById(USER_ID)).thenReturn(Optional.empty());
+        RankedFeedPost additionalRankedFeedPost = mock(RankedFeedPost.class);
+        stubRankedFeedPosts(List.of(
+                rankedFeedPost(FIRST_POST_ID, 0.9), additionalRankedFeedPost));
+
+        FeedResponseDto feedResponse = generateFeedUseCase.execute(USER_ID, 1, 0);
+
+        assertThat(feedResponse.items()).extracting(item -> item.postId()).containsExactly(FIRST_POST_ID);
+        assertThat(feedResponse.hasNext()).isTrue();
     }
 
-    private static FeedCandidate candidate(UUID postId, double similarity, Instant creationInstant) {
-        return new FeedCandidate() {
-            @Override public UUID getPostId() { return postId; }
-            @Override public Instant getCreationInstant() { return creationInstant; }
-            @Override public double getSimilarity() { return similarity; }
-        };
+    private void stubRankedFeedPosts(List<RankedFeedPost> rankedFeedPosts) {
+        when(postEmbeddingRepository.findRankedFeedPosts(
+                any(), any(), anyBoolean(), anyInt(), anyInt(), anyInt(), any(), anyLong(), anyDouble(),
+                anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .thenReturn(rankedFeedPosts);
     }
 
-    private static PostPopularity popularity(UUID postId, InteractionType type, long count) {
-        return new PostPopularity() {
-            @Override public UUID getPostId() { return postId; }
-            @Override public InteractionType getType() { return type; }
-            @Override public long getInteractionCount() { return count; }
-        };
+    private static UserEmbeddingEntity userEmbeddingEntity(float[] userEmbedding) {
+        return UserEmbeddingEntity.builder()
+                .userId(USER_ID)
+                .embedding(userEmbedding)
+                .updatedInstant(Instant.now())
+                .build();
+    }
+
+    private static RankedFeedPost rankedFeedPost(UUID postId, double rankingScore) {
+        RankedFeedPost rankedFeedPost = mock(RankedFeedPost.class);
+        when(rankedFeedPost.getPostId()).thenReturn(postId);
+        when(rankedFeedPost.getRankingScore()).thenReturn(rankingScore);
+        return rankedFeedPost;
     }
 }

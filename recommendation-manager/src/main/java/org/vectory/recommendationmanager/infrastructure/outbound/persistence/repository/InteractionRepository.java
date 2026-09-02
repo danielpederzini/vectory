@@ -21,11 +21,4 @@ public interface InteractionRepository extends JpaRepository<InteractionEntity, 
             """, nativeQuery = true)
     List<InteractionEntity> claimUnprocessed(@Param("limit") int limit);
 
-    @Query("""
-            select i.postId as postId, i.type as type, count(i) as interactionCount
-            from InteractionEntity i
-            where i.postId in :postIds
-            group by i.postId, i.type
-            """)
-    List<PostPopularity> countByPostIdAndType(@Param("postIds") List<UUID> postIds);
 }
