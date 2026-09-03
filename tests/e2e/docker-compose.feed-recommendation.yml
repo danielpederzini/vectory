@@ -1,0 +1,21 @@
+services:
+  embedding-stub:
+    image: vectory-e2e-embedding-stub:latest
+    build:
+      context: ./tests/e2e/embedding-stub
+    networks:
+      - vectory
+
+  recommendation-manager:
+    image: vectory-recommendation-manager:latest
+    environment:
+      EMBEDDING_BASE_URL: http://embedding-stub:8080
+      EMBEDDING_PATH: /v1/embeddings
+      EMBEDDING_API_KEY: ""
+      CRON_FIXED_DELAY: PT1S
+
+  content-manager:
+    image: vectory-content-manager:latest
+
+  user-manager:
+    image: vectory-user-manager:latest
