@@ -6,21 +6,36 @@ from http.server import ThreadingHTTPServer
 
 EMBEDDING_DIMENSIONS = 1024
 EMBEDDING_ENDPOINT = "/v1/embeddings"
+TOPIC_MARKER_PREFIX = "[E2E_TOPIC:"
+TOPIC_MARKER_SUFFIX = "]"
+TOPIC_VECTOR_COMPONENT_INDEX = {
+    "coffee": 0,
+    "hiking": 1,
+    "photography": 2,
+    "cooking": 3,
+}
 
 
-def create_embedding(first_component, second_component):
+def create_topic_embedding(topic_name):
+    topic_component_index = TOPIC_VECTOR_COMPONENT_INDEX.get(topic_name)
+    if topic_component_index is None:
+        raise ValueError(f"no deterministic embedding configured for topic: {topic_name}")
+
     embedding_components = [0.0] * EMBEDDING_DIMENSIONS
-    embedding_components[0] = first_component
-    embedding_components[1] = second_component
+    embedding_components[topic_component_index] = 1.0
     return embedding_components
 
 
-EMBEDDING_BY_POST_TEXT = {
-    "Coffee brewing basics": create_embedding(1.0, 0.0),
-    "Espresso extraction techniques": create_embedding(0.98, 0.20),
-    "Hiking preparation essentials": create_embedding(0.0, 1.0),
-    "Mountain trail navigation": create_embedding(0.20, 0.98),
-}
+def extract_topic_name(post_text):
+    marker_start_index = post_text.find(TOPIC_MARKER_PREFIX)
+    if marker_start_index < 0:
+        raise ValueError(f"missing topic marker in post text: {post_text}")
+
+    topic_start_index = marker_start_index + len(TOPIC_MARKER_PREFIX)
+    topic_end_index = post_text.find(TOPIC_MARKER_SUFFIX, topic_start_index)
+    if topic_end_index < 0:
+        raise ValueError(f"unterminated topic marker in post text: {post_text}")
+    return post_text[topic_start_index:topic_end_index]
 
 
 def get_embedding_request_text(embedding_input):
@@ -72,10 +87,8 @@ class EmbeddingRequestHandler(BaseHTTPRequestHandler):
         response_data = []
         for embedding_input in embedding_inputs:
             post_text = get_embedding_request_text(embedding_input)
-            post_embedding = EMBEDDING_BY_POST_TEXT.get(post_text)
-            if post_embedding is None:
-                raise ValueError(f"no deterministic embedding configured for: {post_text}")
-            response_data.append({"embedding": post_embedding})
+            topic_name = extract_topic_name(post_text)
+            response_data.append({"embedding": create_topic_embedding(topic_name)})
         return {"data": response_data}
 
     def send_json_response(self, response_status, response_body):
